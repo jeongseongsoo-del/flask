@@ -91,6 +91,8 @@ curl -i "https://<your-service>.app.cloudtype.io/item-detail?itemCd=1297571"
 ## 🏷️ 환경변수
 
 - `FLASK_ENV`: 배포 환경 설정
+- `APP_ACCESS_PASSWORD`: 접속 비밀번호(미설정 시 서비스는 503 반환)
+- `FLASK_SECRET_KEY`: 세션 암호화 키(강력한 임의 문자열 권장)
 
 
 ## 💬 문제해결
