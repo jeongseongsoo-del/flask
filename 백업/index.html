@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Tailwind UI Layout</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+  </head>
+  <body class="min-h-screen bg-slate-100 text-slate-800">
+    <div class="min-h-screen flex flex-col">
+      <header class="sticky top-0 z-10 border-b border-slate-200 bg-white/90 backdrop-blur">
+        <div class="mx-auto flex max-w-7xl items-center justify-between px-6 py-4 lg:px-8">
+          <div class="flex items-center gap-3">
+            <div class="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-600 to-violet-500 font-bold text-white">
+              UI
+            </div>
+            <span class="text-lg font-semibold">Smart Dashboard</span>
+          </div>
+
+          <nav class="flex gap-5 text-sm font-medium text-slate-600">
+            <a href="#" class="transition hover:text-indigo-600">Overview</a>
+            <a href="#" class="transition hover:text-indigo-600">Projects</a>
+            <a href="#" class="transition hover:text-indigo-600">Reports</a>
+            <a href="#" class="transition hover:text-indigo-600">Settings</a>
+          </nav>
+        </div>
+      </header>
+
+      <section class="mx-auto grid w-full max-w-7xl flex-1 gap-6 px-4 py-6 md:grid-cols-[240px_1fr] md:px-6 lg:px-8">
+        <aside class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+          <h3 class="mb-4 text-sm font-semibold uppercase tracking-wide text-slate-500">Menu</h3>
+          <div class="flex flex-col gap-2" id="sidebar-menu">
+            <a href="#" data-page="dashboard" class="menu-link rounded-xl bg-indigo-50 px-3 py-2 font-semibold text-indigo-600">대시보드</a>
+            <a href="#" data-page="ctx" class="menu-link rounded-xl px-3 py-2 text-slate-700 transition hover:bg-slate-100">CTX 단건수집</a>
+            <a href="#" data-page="stats" class="menu-link rounded-xl px-3 py-2 text-slate-700 transition hover:bg-slate-100">통계</a>
+            <a href="#" data-page="alerts" class="menu-link rounded-xl px-3 py-2 text-slate-700 transition hover:bg-slate-100">알림</a>
+            <a href="#" data-page="help" class="menu-link rounded-xl px-3 py-2 text-slate-700 transition hover:bg-slate-100">도움말</a>
+          </div>
+        </aside>
+
+        <main class="flex flex-col gap-6" id="page-content"></main>
+      </section>
+
+      <footer class="border-t border-slate-200 bg-slate-900 py-4 text-center text-sm text-slate-300">
+        © 2026 Smart Dashboard. All rights reserved.
+      </footer>
+    </div>
+
+    <script>
+      const pageContent = document.getElementById('page-content');
+      const menuLinks = document.querySelectorAll('.menu-link');
+
+      const pages = {
+        dashboard: {
+          title: '대시보드',
+          subtitle: '핵심 정보를 한눈에 확인하세요.',
+          description: '이 영역은 선택한 메뉴에 맞는 새로운 페이지로 바뀝니다.'
+        },
+        ctx: {
+          title: 'CTX 단건수집',
+          subtitle: '단건 데이터를 빠르게 수집할 수 있습니다.',
+          description: '새로운 페이지가 생성되어 빈 화면 기반의 작업 영역으로 사용할 수 있습니다.'
+        },
+        stats: {
+          title: '통계',
+          subtitle: '수집 결과와 현황을 분석해보세요.',
+          description: '여기에 차트나 표가 들어갈 수 있는 빈 페이지가 생성됩니다.'
+        },
+        alerts: {
+          title: '알림',
+          subtitle: '중요한 사건을 바로 확인하세요.',
+          description: '알림 목록 또는 상태 메시지를 배치하는 빈 페이지입니다.'
+        },
+        help: {
+          title: '도움말',
+          subtitle: '문서와 가이드를 확인하세요.',
+          description: '도움말 콘텐츠를 위한 공백 페이지입니다.'
+        }
+      };
+
+      async function renderPage(pageKey) {
+        const page = pages[pageKey] || pages.dashboard;
+
+        if (pageKey === 'ctx') {
+          pageContent.innerHTML = `
+            <section class="rounded-3xl border border-slate-200 bg-white p-3 shadow-sm">
+              <iframe src="ctx-single-collection.html" class="min-h-[620px] w-full rounded-2xl border-0"></iframe>
+            </section>
+          `;
+          return;
+        }
+
+        pageContent.innerHTML = `
+          <section class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+            <div class="mb-6 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <p class="text-sm font-medium text-indigo-600">${page.subtitle}</p>
+                <h1 class="text-2xl font-semibold text-slate-900">${page.title}</h1>
+              </div>
+              <button class="rounded-xl border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600 transition hover:bg-slate-100">
+                새 페이지 열기
+              </button>
+            </div>
+
+            <div class="min-h-[360px] rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-6">
+              <p class="text-sm leading-7 text-slate-600">${page.description}</p>
+              <div class="mt-6 grid gap-4 md:grid-cols-2">
+                <div class="h-24 rounded-xl border border-slate-200 bg-white"></div>
+                <div class="h-24 rounded-xl border border-slate-200 bg-white"></div>
+              </div>
+            </div>
+          </section>
+        `;
+      }
+
+      menuLinks.forEach((link) => {
+        link.addEventListener('click', (event) => {
+          event.preventDefault();
+          menuLinks.forEach((item) => {
+            item.classList.remove('bg-indigo-50', 'font-semibold', 'text-indigo-600');
+            item.classList.add('text-slate-700');
+          });
+
+          link.classList.add('bg-indigo-50', 'font-semibold', 'text-indigo-600');
+          link.classList.remove('text-slate-700');
+          renderPage(link.dataset.page);
+        });
+      });
+
+      renderPage('dashboard');
+    </script>
+  </body>
+</html>

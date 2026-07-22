@@ -1,0 +1,4 @@
+@echo off
+cd D:\DEV\coopang
+python update_product_info.py
+pause

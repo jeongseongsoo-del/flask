@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>CTX 단건수집</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+  </head>
+  <body class="bg-white p-4 text-slate-800">
+    <section class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+      <div class="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <p class="text-sm font-medium text-indigo-600">단건 데이터 수집</p>
+          <h1 class="text-2xl font-semibold text-slate-900">CTX 단건수집</h1>
+        </div>
+        <button id="run-btn" class="rounded-xl border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600 transition hover:bg-slate-100">
+          수집 실행
+        </button>
+      </div>
+
+      <div class="grid gap-4 lg:grid-cols-[1.2fr_0.8fr]">
+        <div class="rounded-2xl border border-slate-200 bg-slate-50 p-5">
+          <label class="mb-2 block text-sm font-medium text-slate-700" for="target">상품코드</label>
+          <input id="target" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="7" placeholder="1231001" class="mb-4 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100" />
+
+          <label class="mb-2 block text-sm font-medium text-slate-700" for="type">수집 유형</label>
+          <select id="type" class="mb-4 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100">
+            <option>옵션상품(연관성)포함</option>
+            <option>단건수집</option>
+          </select>
+
+          <button id="submit-btn" class="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-indigo-700">
+            시작하기
+          </button>
+        </div>
+
+        <div class="rounded-2xl border border-slate-200 bg-white p-5">
+          <h2 class="mb-3 text-lg font-semibold text-slate-900">수집 상태</h2>
+          <div id="result-box" class="space-y-3 text-sm text-slate-600">
+            <div class="rounded-xl bg-emerald-50 p-3 text-emerald-700">준비 완료</div>
+            <div class="rounded-xl bg-slate-100 p-3">마지막 실행: 대기 중</div>
+            <div class="rounded-xl bg-slate-100 p-3">대기 중인 요청: 0건</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="mt-4 rounded-2xl border border-slate-200 bg-white p-5">
+        <div class="mb-3 flex items-center justify-between">
+          <h2 class="text-lg font-semibold text-slate-900">상세 페이지 미리보기</h2>
+          <span id="iframe-status" class="text-sm text-slate-500">대기 중</span>
+        </div>
+        <iframe id="detail-frame" title="CTX 상세 페이지" class="min-h-[520px] w-full rounded-xl border border-slate-300 bg-white"></iframe>
+        <div id="iframe-values" class="mt-3 rounded-xl bg-slate-50 p-3 text-sm text-slate-600">
+          proino로 불러온 페이지에서 추출된 값이 여기에 표시됩니다.
+        </div>
+        <div class="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-3">
+          <div class="mb-2 text-sm font-semibold text-slate-700">정리된 상세 HTML</div>
+          <div id="clean-detail-preview" class="max-h-[420px] overflow-auto rounded-lg border border-slate-200 bg-white p-3 text-sm leading-7 text-slate-700"></div>
+        </div>
+      </div>
+    </section>
+
+    <script>
+      const runBtn = document.getElementById('run-btn');
+      const submitBtn = document.getElementById('submit-btn');
+      const targetInput = document.getElementById('target');
+      const resultBox = document.getElementById('result-box');
+      const detailFrame = document.getElementById('detail-frame');
+      const iframeStatus = document.getElementById('iframe-status');
+      const iframeValues = document.getElementById('iframe-values');
+      const cleanDetailPreview = document.getElementById('clean-detail-preview');
+      const previewBaseUrl = window.location.hostname && window.location.hostname !== 'file'
+        ? `${window.location.protocol}//${window.location.host}`
+        : 'http://127.0.0.1:5000';
+
+      let iframeReadAttempt = 0;
+
+      function sanitizeDetailHtml(html) {
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(html, 'text/html');
+        const detailRoot = doc.getElementById('itemDetailDiv') || doc.body;
+
+        if (!detailRoot) {
+          return '<div class="text-slate-500">itemDetailDiv 요소를 찾을 수 없습니다.</div>';
+        }
+
+        const clone = detailRoot.cloneNode(true);
+        clone.querySelectorAll('script, style, link, noscript, iframe, object, embed, form, input, button, select, textarea, svg, canvas').forEach((element) => element.remove());
+
+        clone.querySelectorAll('*').forEach((element) => {
+          element.removeAttribute('style');
+          element.removeAttribute('class');
+          element.removeAttribute('id');
+          element.removeAttribute('onclick');
+          element.removeAttribute('onmouseover');
+          element.removeAttribute('onmouseout');
+          element.removeAttribute('data-*');
+        });
+
+        clone.querySelectorAll('img').forEach((element) => {
+          element.removeAttribute('style');
+          element.removeAttribute('class');
+          element.removeAttribute('id');
+        });
+
+        return clone.outerHTML;
+      }
+
+      function renderCleanDetailPreview(html) {
+        const sanitized = sanitizeDetailHtml(html);
+        cleanDetailPreview.innerHTML = sanitized || '<div class="text-slate-500">정리할 상세 HTML이 없습니다.</div>';
+      }
+
+      function setIframeValues(frame) {
+        try {
+          const doc = frame.contentDocument || frame.contentWindow?.document;
+          if (!doc) {
+            if (iframeReadAttempt < 4) {
+              iframeReadAttempt += 1;
+              setTimeout(() => setIframeValues(frame), 500);
+              return;
+            }
+            iframeStatus.textContent = '로드 불가';
+            iframeValues.textContent = 'iframe 문서를 읽을 수 없습니다.';
+            return;
+          }
+
+          iframeReadAttempt = 0;
+          const metaInfo = doc.getElementById('metaInfoTbl');
+          if (metaInfo) {
+            const rows = Array.from(metaInfo.querySelectorAll('tr')).map((row) => {
+              const cells = row.querySelectorAll('th, td');
+              const firstCellValue = (cells[0]?.textContent || '').replace(/\s+/g, ' ').trim();
+              const secondCell = cells[1];
+              let activeValue = '';
+
+              if (secondCell) {
+                const activeButton = secondCell.querySelector('button[data-active="Y"]');
+                activeValue = (activeButton?.textContent || '').replace(/\s+/g, ' ').trim();
+              }
+
+              if (firstCellValue && activeValue) {
+                return `${firstCellValue} : ${activeValue}`;
+              }
+              if (firstCellValue) {
+                return firstCellValue;
+              }
+              return '';
+            }).filter(Boolean);
+
+            const metaText = rows.join('\n');
+            iframeValues.innerHTML = `
+              <div class="mb-2 font-semibold text-slate-700">metaInfoTbl 값</div>
+              <pre class="whitespace-pre-wrap break-words text-xs leading-6 text-slate-600">${metaText || '테이블 내용이 비어 있습니다.'}</pre>
+            `;
+            iframeStatus.textContent = 'metaInfoTbl 접근 가능';
+            return;
+          }
+
+          iframeValues.innerHTML = `
+            <div class="mb-2 font-semibold text-slate-700">iframe 로드됨</div>
+            <div class="text-xs text-slate-600">URL: ${frame.src || 'unknown'}</div>
+            <div class="mt-2 text-xs text-slate-600">문서 제목: ${doc.title || '없음'}</div>
+          `;
+          iframeStatus.textContent = 'iframe 로드됨';
+
+          const fieldValues = [];
+          doc.querySelectorAll('input, textarea, select').forEach((element) => {
+            const value = (element.value || '').trim();
+            if (value) {
+              fieldValues.push(`${element.name || element.id || 'field'}: ${value}`);
+            }
+          });
+
+          const bodyText = doc.body?.innerText?.replace(/\s+/g, ' ').trim();
+          if (fieldValues.length > 0) {
+            iframeValues.innerHTML = fieldValues.slice(0, 10).map((item) => `<div>${item}</div>`).join('');
+          } else if (bodyText) {
+            iframeValues.textContent = bodyText.slice(0, 800);
+          } else {
+            iframeValues.textContent = '페이지는 로드되었지만 읽을 수 있는 값이 없습니다.';
+          }
+
+          iframeStatus.textContent = '로드 완료';
+        } catch (error) {
+          if (iframeReadAttempt < 4) {
+            iframeReadAttempt += 1;
+            setTimeout(() => setIframeValues(frame), 500);
+            return;
+          }
+          iframeStatus.textContent = '읽기 제한';
+          iframeValues.innerHTML = `
+            <div class="text-rose-600">iframe 내부 요소를 직접 읽지 못했습니다.</div>
+            <div class="mt-2 text-xs text-slate-500">${error.message || '알 수 없는 오류'}</div>
+          `;
+          console.error(error);
+        }
+      }
+
+      targetInput.addEventListener('input', (event) => {
+        const cleanedValue = sanitizeProductCode(event.target.value);
+        if (event.target.value !== cleanedValue) {
+          event.target.value = cleanedValue;
+        }
+      });
+
+      targetInput.addEventListener('paste', (event) => {
+        const pastedText = event.clipboardData?.getData('text') || '';
+        if (!pastedText) {
+          return;
+        }
+
+        event.preventDefault();
+        const cleanedValue = sanitizeProductCode(pastedText);
+        const start = targetInput.selectionStart ?? targetInput.value.length;
+        const end = targetInput.selectionEnd ?? start;
+        const currentValue = targetInput.value;
+        const nextValue = `${currentValue.slice(0, start)}${cleanedValue}${currentValue.slice(end)}`.slice(0, 7);
+
+        targetInput.value = nextValue;
+        const cursorPosition = Math.min(start + cleanedValue.length, nextValue.length);
+        targetInput.setSelectionRange(cursorPosition, cursorPosition);
+        targetInput.dispatchEvent(new Event('input', { bubbles: true }));
+      });
+
+      async function sendCollectionRequest() {
+        const target = sanitizeProductCode(targetInput.value.trim());
+        const type = document.getElementById('type').value;
+
+        if (!target) {
+          resultBox.innerHTML = '<div class="rounded-xl bg-rose-50 p-3 text-rose-700">상품코드를 입력하세요.</div>';
+          return;
+        }
+
+        resultBox.innerHTML = '<div class="rounded-xl bg-amber-50 p-3 text-amber-700">조회 중...</div>';
+
+        try {
+          const response = await fetch(`${previewBaseUrl}/lookup-proino`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ target, type })
+          });
+
+          const data = await response.json();
+
+          if (!response.ok) {
+            throw new Error(data.message || '조회에 실패했습니다.');
+          }
+
+          resultBox.innerHTML = `
+            <div class="rounded-xl bg-emerald-50 p-3 text-emerald-700">${data.message}</div>
+            <div class="rounded-xl bg-slate-100 p-3">상품코드: ${data.target || '없음'}</div>
+            <div class="rounded-xl bg-slate-100 p-3">proino: ${data.proino ?? '없음'}</div>
+            <div class="rounded-xl bg-slate-100 p-3">조회 유형: ${type}</div>
+          `;
+
+          if (data.proino) {
+            iframeStatus.textContent = '로딩 중...';
+            iframeValues.textContent = '상세 페이지를 불러오는 중입니다.';
+
+            try {
+              const detailResponse = await fetch(`${previewBaseUrl}/item-detail?itemCd=${encodeURIComponent(data.proino)}`);
+              const detailHtml = await detailResponse.text();
+              renderCleanDetailPreview(detailHtml);
+              detailFrame.srcdoc = detailHtml;
+            } catch (error) {
+              detailFrame.src = `${previewBaseUrl}/item-detail?itemCd=${encodeURIComponent(data.proino)}`;
+              console.error(error);
+            }
+          }
+        } catch (error) {
+          resultBox.innerHTML = `
+            <div class="rounded-xl bg-rose-50 p-3 text-rose-700">${error.message || '연결 실패: Flask 서버가 실행 중인지 확인하세요.'}</div>
+          `;
+          console.error(error);
+        }
+      }
+
+      detailFrame.addEventListener('load', () => {
+        setIframeValues(detailFrame);
+      });
+
+      runBtn.addEventListener('click', sendCollectionRequest);
+      submitBtn.addEventListener('click', sendCollectionRequest);
+    </script>
+  </body>
+</html>
