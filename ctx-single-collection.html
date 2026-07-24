@@ -807,8 +807,14 @@
 
       saveDbBtn?.addEventListener('click', async () => {
         const sql = buildItemInsertSql();
+        const itemId = sanitizeProductCode(targetInput.value || latestLookupData?.target || '');
         if (!sql) {
           resultBox.innerHTML = '<div class="rounded-xl bg-amber-50 p-3 text-amber-700">저장할 SQL이 아직 생성되지 않았습니다.</div>';
+          return;
+        }
+
+        if (!itemId) {
+          resultBox.innerHTML = '<div class="rounded-xl bg-amber-50 p-3 text-amber-700">유효한 상품코드를 확인하세요.</div>';
           return;
         }
 
@@ -824,7 +830,7 @@
           const response = await fetch(`${previewBaseUrl}/save-item`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ sql })
+            body: JSON.stringify({ sql, itemId })
           });
 
           const data = await response.json();

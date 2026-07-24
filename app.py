@@ -211,7 +211,7 @@ def validate_db_config(config):
     return missing
 
 
-def execute_item_insert_sql(sql):
+def execute_item_insert_sql(sql, item_id):
     if pymysql is None:
         raise RuntimeError('pymysql 패키지가 설치되지 않았습니다. requirements 설치 후 다시 시도하세요.')
 
@@ -233,9 +233,22 @@ def execute_item_insert_sql(sql):
     )
     try:
         with conn.cursor() as cursor:
+            cursor.execute('SELECT COUNT(*) FROM g5_shop_item WHERE it_id = %s', (item_id,))
+            duplicate_count = int(cursor.fetchone()[0] or 0)
+            if duplicate_count > 0:
+                return {
+                    'inserted': False,
+                    'affected': 0,
+                    'duplicate': True
+                }
+
             affected = cursor.execute(sql)
         conn.commit()
-        return affected
+        return {
+            'inserted': True,
+            'affected': affected,
+            'duplicate': False
+        }
     except Exception:
         conn.rollback()
         raise
@@ -367,20 +380,27 @@ def item_detail():
 def save_item():
     data = request.get_json(silent=True) or {}
     sql = str(data.get('sql', '')).strip()
+    item_id = normalize_target(data.get('itemId', ''))
 
     if not sql:
         return jsonify({'success': False, 'message': '저장할 SQL이 없습니다.'}), 400
+
+    if not item_id:
+        return jsonify({'success': False, 'message': '상품코드(itemId)가 올바르지 않습니다.'}), 400
 
     normalized = re.sub(r'\s+', ' ', sql).strip().lower()
     if not normalized.startswith('insert into `g5_shop_item`') and not normalized.startswith('insert into g5_shop_item'):
         return jsonify({'success': False, 'message': '허용되지 않은 SQL입니다. g5_shop_item INSERT만 저장할 수 있습니다.'}), 400
 
     try:
-        affected = execute_item_insert_sql(sql)
+        insert_result = execute_item_insert_sql(sql, item_id)
     except Exception as exc:
         return jsonify({'success': False, 'message': 'DB 저장에 실패했습니다.', 'error': str(exc)}), 500
 
-    return jsonify({'success': True, 'message': 'DB 저장이 완료되었습니다.', 'affectedRows': affected})
+    if insert_result.get('duplicate'):
+        return jsonify({'success': False, 'message': f'이미 등록된 상품코드입니다: {item_id}', 'duplicate': True, 'itemId': item_id}), 409
+
+    return jsonify({'success': True, 'message': 'DB 저장이 완료되었습니다.', 'affectedRows': insert_result.get('affected', 0), 'itemId': item_id})
 
 
 if __name__ == '__main__':
