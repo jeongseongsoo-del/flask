@@ -116,6 +116,16 @@
         </div>
         <iframe id="detail-frame" title="CTX 상세 페이지" class="min-h-[520px] w-full rounded-xl border border-slate-300 bg-white"></iframe>
       </div>
+        <div class="mt-4 rounded-2xl border border-slate-200 bg-white p-5">
+          <div class="mb-3 flex items-center justify-between">
+            <h2 class="text-lg font-semibold text-slate-900">MariaDB INSERT SQL</h2>
+            <div class="flex items-center gap-2">
+              <button id="save-db-btn" type="button" class="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-emerald-700">DB 저장</button>
+              <button id="copy-sql-btn" type="button" class="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-100">복사</button>
+            </div>
+          </div>
+          <pre id="sql-preview" class="max-h-[320px] overflow-auto whitespace-pre-wrap break-words rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs leading-6 text-slate-700">조회 후 SQL이 생성됩니다.</pre>
+        </div>
     </section>
 
     <script>
@@ -127,6 +137,9 @@
       const iframeValues = document.getElementById('iframe-values');
       const cleanDetailPreview = document.getElementById('clean-detail-preview');
       const summaryInfoList = document.getElementById('summary-info-list');
+        const sqlPreview = document.getElementById('sql-preview');
+        const copySqlBtn = document.getElementById('copy-sql-btn');
+      const saveDbBtn = document.getElementById('save-db-btn');
       const productImagePreview = document.getElementById('field-product-image-preview');
       const productImageEmpty = document.getElementById('field-product-image-empty');
       const CTX_RESOURCE_BASE_URL = 'https://ctx.cretec.kr/CtxApp/resource';
@@ -201,6 +214,8 @@
       let latestLookupData = null;
       let iframeReadAttempt = 0;
       let autoExtractPending = false;
+      let latestMetaInfoText = '';
+      let latestCleanDetailHtml = '';
 
       function sanitizeProductCode(value) {
         return String(value || '').replace(/\D/g, '').slice(0, 7);
@@ -249,6 +264,199 @@
         const digits = String(value ?? '').replace(/[^0-9-]/g, '');
         const parsed = Number.parseInt(digits, 10);
         return Number.isFinite(parsed) ? parsed : 0;
+      }
+
+      function toFloatValue(value) {
+        const normalized = String(value ?? '').replace(/,/g, '').trim();
+        const parsed = Number.parseFloat(normalized);
+        return Number.isFinite(parsed) ? parsed : 0;
+      }
+
+      function toSqlLiteral(value) {
+        if (value === null || value === undefined) {
+          return "''";
+        }
+
+        if (typeof value === 'number') {
+          return Number.isFinite(value) ? String(value) : '0';
+        }
+
+        return `'${String(value).replace(/\\/g, '\\\\').replace(/'/g, "''")}'`;
+      }
+
+      function formatSqlDateTime(date) {
+        const yyyy = date.getFullYear();
+        const mm = String(date.getMonth() + 1).padStart(2, '0');
+        const dd = String(date.getDate()).padStart(2, '0');
+        const hh = String(date.getHours()).padStart(2, '0');
+        const mi = String(date.getMinutes()).padStart(2, '0');
+        const ss = String(date.getSeconds()).padStart(2, '0');
+        return `${yyyy}-${mm}-${dd} ${hh}:${mi}:${ss}`;
+      }
+
+      function buildCombinedTitle(nameValue, modelValue) {
+        return [String(nameValue || '').trim(), String(modelValue || '').trim()].filter(Boolean).join(' ');
+      }
+
+      function buildItemInsertSql() {
+        if (!latestLookupData) {
+          return '';
+        }
+
+        const item = latestLookupData?.payload?.result?.items?.find((entry) => !!entry) || {};
+        const itemCd = sanitizeProductCode(targetInput.value || latestLookupData.target || '');
+        if (!itemCd) {
+          return '';
+        }
+
+        const productName = String(collectionFields.productName.value || '').trim();
+        const brandName = String(collectionFields.brand.value || '').trim();
+        const modelName = String(collectionFields.model.value || '').trim();
+        const seoTitle = buildCombinedTitle(productName, modelName);
+        const basicText = seoTitle || productName;
+        const stockQty = Math.max(0, toIntegerValue(collectionFields.stock.value));
+        const baseShipQty = Math.max(0, toFloatValue(collectionFields.baseShipQty.value));
+        const supplyPrice = Math.max(0, toFloatValue(collectionFields.supplyPrice.value));
+        const shippingFee = Math.max(0, toFloatValue(collectionFields.shippingFee.value));
+        const imageUrl = String(collectionFields.productImageUrl.value || '').trim();
+
+        const baseAmount = baseShipQty * supplyPrice;
+        let itPrice = Math.round(baseAmount * 1.3);
+        if (baseAmount < 20000) {
+          itPrice += 2000;
+        }
+
+        const impDelvServ = String(item?.imp_delv_serv || '').trim().toUpperCase();
+        const itScType = impDelvServ === 'Y' ? 1 : 2;
+        const itScPrice = impDelvServ === 'Y'
+          ? Math.round(itPrice + (shippingFee * 1.1))
+          : Math.round(shippingFee);
+
+        const metaHtml = latestMetaInfoText
+          ? `<pre>${escapeHtml(latestMetaInfoText)}</pre>`
+          : '<pre>metaInfoTbl 값 없음</pre>';
+        const detailHtml = latestCleanDetailHtml || '<div>정리된 상세 HTML 없음</div>';
+        const explainHtml = `${metaHtml}\n${detailHtml}`;
+
+        const nowText = formatSqlDateTime(new Date());
+        const infoValue = 'a:6:{s:12:"product_name";s:22:"상품페이지 참고";s:10:"model_name";s:22:"상품페이지 참고";s:16:"certified_by_law";s:22:"상품페이지 참고";s:6:"origin";s:22:"상품페이지 참고";s:5:"maker";s:22:"상품페이지 참고";s:2:"as";s:22:"상품페이지 참고";}';
+
+        const columns = [
+            'it_id', 'ca_id', 'ca_id2', 'ca_id3', 'it_skin', 'it_mobile_skin', 'it_name', 'it_seo_title', 'it_maker', 'it_origin',
+            'it_brand', 'it_model', 'it_option_subject', 'it_supply_subject', 'it_type1', 'it_type2', 'it_type3', 'it_type4', 'it_type5', 'it_basic',
+            'it_explan', 'it_explan2', 'it_mobile_explan', 'it_cust_price', 'it_price', 'it_point', 'it_point_type', 'it_supply_point', 'it_notax', 'it_sell_email',
+            'it_use', 'it_nocoupon', 'it_soldout', 'it_stock_qty', 'it_stock_sms', 'it_noti_qty', 'it_sc_type', 'it_sc_method', 'it_sc_price', 'it_sc_minimum',
+            'it_sc_qty', 'it_buy_min_qty', 'it_buy_max_qty', 'it_head_html', 'it_tail_html', 'it_mobile_head_html', 'it_mobile_tail_html', 'it_hit', 'it_time', 'it_update_time',
+            'it_ip', 'it_order', 'it_tel_inq', 'it_info_gubun', 'it_info_value', 'it_sum_qty', 'it_use_cnt', 'it_use_avg', 'it_shop_memo', 'ec_mall_pid',
+            'it_img1', 'it_img2', 'it_img3', 'it_img4', 'it_img5', 'it_img6', 'it_img7', 'it_img8', 'it_img9', 'it_img10',
+            'it_1_subj', 'it_2_subj', 'it_3_subj', 'it_4_subj', 'it_5_subj', 'it_6_subj', 'it_7_subj', 'it_8_subj', 'it_9_subj', 'it_10_subj',
+            'it_1', 'it_2', 'it_3', 'it_4', 'it_5', 'it_6', 'it_7', 'it_8', 'it_9', 'it_10'
+          ];
+
+        const values = Object.fromEntries(columns.map((column) => [column, '']));
+        Object.assign(values, {
+            it_id: itemCd,
+            ca_id: '99',
+            ca_id2: '',
+            ca_id3: '',
+            it_skin: 'theme/basic',
+            it_mobile_skin: '',
+            it_name: productName,
+            it_seo_title: seoTitle,
+            it_maker: '상세페이지 참조',
+            it_origin: '상세페이지 참조',
+            it_brand: brandName,
+            it_model: modelName,
+            it_option_subject: '',
+            it_supply_subject: '',
+            it_type1: 0,
+            it_type2: 0,
+            it_type3: 0,
+            it_type4: 0,
+            it_type5: 0,
+            it_basic: basicText,
+            it_explan: explainHtml,
+            it_explan2: '',
+            it_mobile_explan: '',
+            it_cust_price: 0,
+            it_price: itPrice,
+            it_point: 1,
+            it_point_type: 0,
+            it_supply_point: 0,
+            it_notax: 0,
+            it_sell_email: '',
+            it_use: 1,
+            it_nocoupon: 0,
+            it_soldout: 0,
+            it_stock_qty: stockQty,
+            it_stock_sms: 0,
+            it_noti_qty: 0,
+            it_sc_type: itScType,
+            it_sc_method: 0,
+            it_sc_price: itScPrice,
+            it_sc_minimum: 0,
+            it_sc_qty: 0,
+            it_buy_min_qty: 0,
+            it_buy_max_qty: 0,
+            it_head_html: '',
+            it_tail_html: '',
+            it_mobile_head_html: '',
+            it_mobile_tail_html: '',
+            it_hit: 1,
+            it_time: nowText,
+            it_update_time: nowText,
+            it_ip: '',
+            it_order: 0,
+            it_tel_inq: 0,
+            it_info_gubun: 'etc',
+            it_info_value: infoValue,
+            it_sum_qty: 0,
+            it_use_cnt: 0,
+            it_use_avg: 0.0,
+            it_shop_memo: itemCd,
+            ec_mall_pid: '',
+            it_img1: imageUrl,
+            it_img2: '',
+            it_img3: '',
+            it_img4: '',
+            it_img5: '',
+            it_img6: '',
+            it_img7: '',
+            it_img8: '',
+            it_img9: '',
+            it_img10: '',
+            it_1_subj: '',
+            it_2_subj: '',
+            it_3_subj: '',
+            it_4_subj: '',
+            it_5_subj: '',
+            it_6_subj: '',
+            it_7_subj: '',
+            it_8_subj: '',
+            it_9_subj: '',
+            it_10_subj: '',
+            it_1: imageUrl,
+            it_2: '',
+            it_3: '',
+            it_4: '',
+            it_5: '',
+            it_6: '',
+            it_7: '',
+            it_8: '',
+            it_9: '',
+            it_10: ''
+          });
+
+        const sql = `INSERT INTO \`g5_shop_item\` (${columns.map((column) => `\`${column}\``).join(', ')}) VALUES (${columns.map((column) => toSqlLiteral(values[column])).join(', ')});`;
+        return sql;
+      }
+
+      function renderSqlPreview() {
+        if (!sqlPreview) {
+          return;
+        }
+        const sql = buildItemInsertSql();
+        sqlPreview.textContent = sql || '조회 후 SQL이 생성됩니다.';
       }
 
       function escapeHtml(value) {
@@ -364,6 +572,8 @@
           <div class="rounded-xl bg-slate-100 p-3">공급단가: ${collectionFields.supplyPrice.value || '0'}</div>
           <div class="rounded-xl bg-slate-100 p-3">상품이미지 URL: ${collectionFields.productImageUrl.value || '-'}</div>
         `;
+
+        renderSqlPreview();
       }
 
       function sanitizeDetailHtml(html) {
@@ -398,7 +608,9 @@
 
       function renderCleanDetailPreview(html) {
         const sanitized = sanitizeDetailHtml(html);
+        latestCleanDetailHtml = sanitized || '';
         cleanDetailPreview.innerHTML = sanitized || '<div class="text-slate-500">정리할 상세 HTML이 없습니다.</div>';
+        renderSqlPreview();
       }
 
       function parsePriceToInteger(value) {
@@ -476,7 +688,7 @@
           }
 
           iframeReadAttempt = 0;
-          const shippingFeeResult = setShippingFeeFromIframeDoc(doc);
+          setShippingFeeFromIframeDoc(doc);
           if (metaInfo) {
             const rows = Array.from(metaInfo.querySelectorAll('tr')).map((row) => {
               const cells = row.querySelectorAll('th, td');
@@ -499,13 +711,9 @@
             }).filter(Boolean);
 
             const metaText = rows.join('\n');
+            latestMetaInfoText = metaText;
             const productCodeLine = `상품코드: ${formatProdCode(targetInput.value)}`;
-            const shippingFeeLine = shippingFeeResult.applied
-              ? `배송비 자동설정: ${shippingFeeResult.maxFare}`
-              : shippingFeeResult.checked && shippingFeeResult.found
-                ? '배송비 자동설정: 유효한 금액 없음'
-                : '배송비 자동설정: 대상 테이블 없음';
-            const displayText = [productCodeLine, shippingFeeLine, metaText || '테이블 내용이 비어 있습니다.'].filter(Boolean).join('\n');
+            const displayText = [productCodeLine, metaText || '테이블 내용이 비어 있습니다.'].filter(Boolean).join('\n');
             iframeValues.innerHTML = `
               <div class="mb-2 font-semibold text-slate-700">metaInfoTbl 값</div>
               <pre class="whitespace-pre-wrap break-words text-xs leading-6 text-slate-600">${displayText}</pre>
@@ -517,8 +725,12 @@
               fillProductNameFromLookupData();
             }
 
+            renderSqlPreview();
+
             return;
           }
+
+          latestMetaInfoText = '';
 
           iframeValues.innerHTML = `
             <div class="mb-2 font-semibold text-slate-700">iframe 로드됨</div>
@@ -544,10 +756,6 @@
             iframeValues.textContent = '페이지는 로드되었지만 읽을 수 있는 값이 없습니다.';
           }
 
-          if (shippingFeeResult.applied) {
-            iframeValues.innerHTML += `<div class="mt-2 text-xs text-slate-600">배송비 자동설정: ${shippingFeeResult.maxFare}</div>`;
-          }
-
           iframeStatus.textContent = '로드 완료';
         } catch (error) {
           if (iframeReadAttempt < 4) {
@@ -568,6 +776,72 @@
         const cleanedValue = sanitizeProductCode(event.target.value);
         if (event.target.value !== cleanedValue) {
           event.target.value = cleanedValue;
+        }
+        renderSqlPreview();
+      });
+
+      Object.values(collectionFields).forEach((input) => {
+        input?.addEventListener('input', () => {
+          renderSqlPreview();
+        });
+      });
+
+      copySqlBtn?.addEventListener('click', async () => {
+        const sql = buildItemInsertSql();
+        if (!sql) {
+          return;
+        }
+
+        try {
+          await navigator.clipboard.writeText(sql);
+          copySqlBtn.textContent = '복사됨';
+          setTimeout(() => {
+            copySqlBtn.textContent = '복사';
+          }, 1200);
+        } catch (error) {
+          console.error(error);
+        }
+      });
+
+      saveDbBtn?.addEventListener('click', async () => {
+        const sql = buildItemInsertSql();
+        if (!sql) {
+          resultBox.innerHTML = '<div class="rounded-xl bg-amber-50 p-3 text-amber-700">저장할 SQL이 아직 생성되지 않았습니다.</div>';
+          return;
+        }
+
+        if (saveDbBtn.disabled) {
+          return;
+        }
+
+        saveDbBtn.disabled = true;
+        saveDbBtn.classList.add('opacity-60', 'cursor-not-allowed');
+        saveDbBtn.textContent = '저장 중...';
+
+        try {
+          const response = await fetch(`${previewBaseUrl}/save-item`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ sql })
+          });
+
+          const data = await response.json();
+          if (!response.ok || !data?.success) {
+            throw new Error(data?.message || 'DB 저장에 실패했습니다.');
+          }
+
+          resultBox.innerHTML = `
+            <div class="rounded-xl bg-emerald-50 p-3 text-emerald-700">${data.message}</div>
+            <div class="rounded-xl bg-slate-100 p-3">영향받은 행 수: ${data.affectedRows ?? 0}</div>
+          `;
+        } catch (error) {
+          resultBox.innerHTML = `
+            <div class="rounded-xl bg-rose-50 p-3 text-rose-700">${error.message || 'DB 저장 중 오류가 발생했습니다.'}</div>
+          `;
+        } finally {
+          saveDbBtn.disabled = false;
+          saveDbBtn.classList.remove('opacity-60', 'cursor-not-allowed');
+          saveDbBtn.textContent = 'DB 저장';
         }
       });
 
@@ -686,6 +960,8 @@
       detailFrame.addEventListener('load', () => {
         setIframeValues(detailFrame);
       });
+
+      renderSqlPreview();
     </script>
   </body>
 </html>

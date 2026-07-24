@@ -56,6 +56,10 @@ gunicorn -b 0.0.0.0:${PORT:-5000} app:app
 6. 배포 트리거
 - `main` 에 푸시 후 자동 배포 로그에서 install/start 단계 성공 여부를 확인합니다.
 
+7. DB 저장 기능 사용 시 환경변수 설정
+- 아래 `MARIADB_*` 환경변수를 Cloudtype 서비스 환경변수에 등록합니다.
+- 미등록 시 `/save-item` 호출은 실패하며 서버가 누락 항목을 응답합니다.
+
 ## 배포 후 헬스체크 시나리오
 
 서비스 URL을 `https://<your-service>.app.cloudtype.io` 라고 가정합니다.
@@ -87,12 +91,25 @@ curl -i "https://<your-service>.app.cloudtype.io/item-detail?itemCd=1297571"
 ```
 - 기대 결과: HTTP 200, HTML 본문 반환
 
+5. DB 저장 API 확인
+```bash
+curl -i -X POST https://<your-service>.app.cloudtype.io/save-item \
+	-H "Content-Type: application/json" \
+	-d '{"sql":"INSERT INTO g5_shop_item (it_id) VALUES (\"1234567\")"}'
+```
+- 기대 결과: 입력 SQL이 `g5_shop_item` INSERT 형식이면 저장 시도, 형식이 다르면 400 반환
+
 
 ## 🏷️ 환경변수
 
 - `FLASK_ENV`: 배포 환경 설정
 - `APP_ACCESS_PASSWORD`: 접속 비밀번호(미설정 시 서비스는 503 반환)
 - `FLASK_SECRET_KEY`: 세션 암호화 키(강력한 임의 문자열 권장)
+- `MARIADB_HOST`: MariaDB 호스트
+- `MARIADB_PORT`: MariaDB 포트 (예: `30916`)
+- `MARIADB_DATABASE`: DB 이름 (예: `nega`)
+- `MARIADB_USER`: DB 사용자
+- `MARIADB_PASSWORD`: DB 비밀번호
 
 
 ## 💬 문제해결

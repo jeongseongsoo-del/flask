@@ -9,6 +9,11 @@ import re
 import threading
 import time
 
+try:
+    import pymysql
+except Exception:
+    pymysql = None
+
 app = Flask(__name__)
 CORS(app)
 app.config['JSON_SORT_KEYS'] = False
@@ -27,7 +32,7 @@ def is_authenticated():
 
 
 def is_api_request():
-        return request.path.startswith('/collect') or request.path.startswith('/lookup-proino') or request.path.startswith('/item-detail')
+    return request.path.startswith('/collect') or request.path.startswith('/lookup-proino') or request.path.startswith('/item-detail') or request.path.startswith('/save-item')
 
 
 @app.before_request
@@ -185,6 +190,59 @@ def _request_text(url, timeout=15, accept='application/json, text/plain, */*'):
         return response.read().decode('utf-8', 'ignore')
 
 
+def get_db_config():
+    host = os.environ.get('MARIADB_HOST', '').strip()
+    port = int(os.environ.get('MARIADB_PORT', '3306').strip() or '3306')
+    database = os.environ.get('MARIADB_DATABASE', '').strip()
+    user = os.environ.get('MARIADB_USER', '').strip()
+    password = os.environ.get('MARIADB_PASSWORD', '')
+    return {
+        'host': host,
+        'port': port,
+        'database': database,
+        'user': user,
+        'password': password
+    }
+
+
+def validate_db_config(config):
+    required_keys = ('host', 'database', 'user', 'password')
+    missing = [key for key in required_keys if not config.get(key)]
+    return missing
+
+
+def execute_item_insert_sql(sql):
+    if pymysql is None:
+        raise RuntimeError('pymysql 패키지가 설치되지 않았습니다. requirements 설치 후 다시 시도하세요.')
+
+    config = get_db_config()
+    missing = validate_db_config(config)
+    if missing:
+        missing_names = ', '.join(missing)
+        raise RuntimeError(f'DB 접속 환경변수가 누락되었습니다: {missing_names}')
+
+    conn = pymysql.connect(
+        host=config['host'],
+        port=config['port'],
+        user=config['user'],
+        password=config['password'],
+        database=config['database'],
+        charset='utf8mb4',
+        autocommit=False,
+        cursorclass=pymysql.cursors.Cursor
+    )
+    try:
+        with conn.cursor() as cursor:
+            affected = cursor.execute(sql)
+        conn.commit()
+        return affected
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
 @app.route('/health', methods=['GET'])
 def health():
     return jsonify({'status': 'ok', 'appState': 'running' if app_state['running'] else 'stopped'})
@@ -303,6 +361,26 @@ def item_detail():
         html = f'<!doctype html><html><head><base href="https://ctx.cretec.kr/"></head><body>{html}</body></html>'
 
     return Response(html, mimetype='text/html; charset=utf-8')
+
+
+@app.route('/save-item', methods=['POST'])
+def save_item():
+    data = request.get_json(silent=True) or {}
+    sql = str(data.get('sql', '')).strip()
+
+    if not sql:
+        return jsonify({'success': False, 'message': '저장할 SQL이 없습니다.'}), 400
+
+    normalized = re.sub(r'\s+', ' ', sql).strip().lower()
+    if not normalized.startswith('insert into `g5_shop_item`') and not normalized.startswith('insert into g5_shop_item'):
+        return jsonify({'success': False, 'message': '허용되지 않은 SQL입니다. g5_shop_item INSERT만 저장할 수 있습니다.'}), 400
+
+    try:
+        affected = execute_item_insert_sql(sql)
+    except Exception as exc:
+        return jsonify({'success': False, 'message': 'DB 저장에 실패했습니다.', 'error': str(exc)}), 500
+
+    return jsonify({'success': True, 'message': 'DB 저장이 완료되었습니다.', 'affectedRows': affected})
 
 
 if __name__ == '__main__':
