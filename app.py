@@ -327,7 +327,7 @@ def search_stats_items(item_id, item_name, page, page_size):
     where_clauses = []
     params = []
     if normalized_item_id:
-        where_clauses.append('it_id = %s')
+        where_clauses.append('it_shop_memo = %s')
         params.append(normalized_item_id)
     if normalized_item_name:
         where_clauses.append('it_name LIKE %s')
