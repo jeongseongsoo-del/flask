@@ -3,6 +3,8 @@ from flask_cors import CORS
 from urllib.parse import quote
 from urllib.request import Request, urlopen
 from functools import wraps
+from datetime import datetime
+from decimal import Decimal
 import json
 import os
 import re
@@ -20,6 +22,99 @@ app.config['JSON_SORT_KEYS'] = False
 app.secret_key = os.environ.get('FLASK_SECRET_KEY', 'change-this-secret-key')
 app_state = {
     'running': True
+}
+
+
+ITEM_SCHEMA_RULES = {
+    'ca_id': {'type': 'str', 'max_len': 10},
+    'ca_id2': {'type': 'str', 'max_len': 255},
+    'ca_id3': {'type': 'str', 'max_len': 255},
+    'it_skin': {'type': 'str', 'max_len': 255},
+    'it_mobile_skin': {'type': 'str', 'max_len': 255},
+    'it_name': {'type': 'str', 'max_len': 255},
+    'it_seo_title': {'type': 'str', 'max_len': 200},
+    'it_maker': {'type': 'str', 'max_len': 255},
+    'it_origin': {'type': 'str', 'max_len': 255},
+    'it_brand': {'type': 'str', 'max_len': 255},
+    'it_model': {'type': 'str', 'max_len': 255},
+    'it_option_subject': {'type': 'str', 'max_len': 255},
+    'it_supply_subject': {'type': 'str', 'max_len': 255},
+    'it_type1': {'type': 'int'},
+    'it_type2': {'type': 'int'},
+    'it_type3': {'type': 'int'},
+    'it_type4': {'type': 'int'},
+    'it_type5': {'type': 'int'},
+    'it_basic': {'type': 'str'},
+    'it_explan': {'type': 'str'},
+    'it_explan2': {'type': 'str'},
+    'it_mobile_explan': {'type': 'str'},
+    'it_cust_price': {'type': 'int'},
+    'it_price': {'type': 'int'},
+    'it_point': {'type': 'int'},
+    'it_point_type': {'type': 'int'},
+    'it_supply_point': {'type': 'int'},
+    'it_notax': {'type': 'int'},
+    'it_sell_email': {'type': 'str', 'max_len': 255},
+    'it_use': {'type': 'int'},
+    'it_nocoupon': {'type': 'int'},
+    'it_soldout': {'type': 'int'},
+    'it_stock_qty': {'type': 'int'},
+    'it_stock_sms': {'type': 'int'},
+    'it_noti_qty': {'type': 'int'},
+    'it_sc_type': {'type': 'int'},
+    'it_sc_method': {'type': 'int'},
+    'it_sc_price': {'type': 'int'},
+    'it_sc_minimum': {'type': 'int'},
+    'it_sc_qty': {'type': 'int'},
+    'it_buy_min_qty': {'type': 'int'},
+    'it_buy_max_qty': {'type': 'int'},
+    'it_head_html': {'type': 'str'},
+    'it_tail_html': {'type': 'str'},
+    'it_mobile_head_html': {'type': 'str'},
+    'it_mobile_tail_html': {'type': 'str'},
+    'it_hit': {'type': 'int'},
+    'it_time': {'type': 'datetime'},
+    'it_update_time': {'type': 'datetime'},
+    'it_ip': {'type': 'str', 'max_len': 25},
+    'it_order': {'type': 'int'},
+    'it_tel_inq': {'type': 'int'},
+    'it_info_gubun': {'type': 'str', 'max_len': 50},
+    'it_info_value': {'type': 'str'},
+    'it_sum_qty': {'type': 'int'},
+    'it_use_cnt': {'type': 'int'},
+    'it_use_avg': {'type': 'decimal1'},
+    'it_shop_memo': {'type': 'str'},
+    'ec_mall_pid': {'type': 'str', 'max_len': 255},
+    'it_img1': {'type': 'str', 'max_len': 255},
+    'it_img2': {'type': 'str', 'max_len': 255},
+    'it_img3': {'type': 'str', 'max_len': 255},
+    'it_img4': {'type': 'str', 'max_len': 255},
+    'it_img5': {'type': 'str', 'max_len': 255},
+    'it_img6': {'type': 'str', 'max_len': 255},
+    'it_img7': {'type': 'str', 'max_len': 255},
+    'it_img8': {'type': 'str', 'max_len': 255},
+    'it_img9': {'type': 'str', 'max_len': 255},
+    'it_img10': {'type': 'str', 'max_len': 255},
+    'it_1_subj': {'type': 'str', 'max_len': 255},
+    'it_2_subj': {'type': 'str', 'max_len': 255},
+    'it_3_subj': {'type': 'str', 'max_len': 255},
+    'it_4_subj': {'type': 'str', 'max_len': 255},
+    'it_5_subj': {'type': 'str', 'max_len': 255},
+    'it_6_subj': {'type': 'str', 'max_len': 255},
+    'it_7_subj': {'type': 'str', 'max_len': 255},
+    'it_8_subj': {'type': 'str', 'max_len': 255},
+    'it_9_subj': {'type': 'str', 'max_len': 255},
+    'it_10_subj': {'type': 'str', 'max_len': 255},
+    'it_1': {'type': 'str', 'max_len': 255},
+    'it_2': {'type': 'str', 'max_len': 255},
+    'it_3': {'type': 'str', 'max_len': 255},
+    'it_4': {'type': 'str', 'max_len': 255},
+    'it_5': {'type': 'str', 'max_len': 255},
+    'it_6': {'type': 'str', 'max_len': 255},
+    'it_7': {'type': 'str', 'max_len': 255},
+    'it_8': {'type': 'str', 'max_len': 255},
+    'it_9': {'type': 'str', 'max_len': 255},
+    'it_10': {'type': 'str', 'max_len': 255}
 }
 
 
@@ -157,6 +252,71 @@ def logout():
 def normalize_target(value):
     cleaned = re.sub(r'\D', '', str(value or ''))
     return cleaned[:7]
+
+
+def normalize_item_id_for_stats(value):
+    item_id = str(value or '').strip()
+    if not item_id:
+        return ''
+    if len(item_id) > 20:
+        return ''
+    return item_id
+
+
+def parse_positive_int(value, default_value, min_value=1, max_value=100000):
+    try:
+        parsed = int(str(value).strip())
+    except Exception:
+        return default_value
+    return max(min_value, min(parsed, max_value))
+
+
+def serialize_db_value(value):
+    if isinstance(value, Decimal):
+        return str(value)
+    if isinstance(value, datetime):
+        return value.strftime('%Y-%m-%d %H:%M:%S')
+    return value
+
+
+def serialize_db_row(row):
+    if not isinstance(row, dict):
+        return row
+    return {key: serialize_db_value(val) for key, val in row.items()}
+
+
+def coerce_item_field_value(column, value):
+    rule = ITEM_SCHEMA_RULES.get(column, {'type': 'str'})
+    value_type = rule.get('type', 'str')
+    max_len = rule.get('max_len')
+
+    if value_type == 'str':
+        text_value = '' if value is None else str(value)
+        if max_len is not None and len(text_value) > max_len:
+            raise ValueError(f'{column} 길이는 최대 {max_len}자입니다.')
+        return text_value
+
+    if value_type == 'int':
+        text_value = '' if value is None else str(value).strip()
+        if text_value == '':
+            return 0
+        return int(text_value)
+
+    if value_type == 'decimal1':
+        text_value = '' if value is None else str(value).strip()
+        if text_value == '':
+            return Decimal('0.0')
+        decimal_value = Decimal(text_value)
+        return decimal_value.quantize(Decimal('0.1'))
+
+    if value_type == 'datetime':
+        text_value = '' if value is None else str(value).strip()
+        if text_value == '':
+            return None
+        datetime.strptime(text_value, '%Y-%m-%d %H:%M:%S')
+        return text_value
+
+    return value
 
 
 def find_proino(payload):
@@ -317,11 +477,11 @@ def search_stats_items(item_id, item_name, page, page_size):
         missing_names = ', '.join(missing)
         raise RuntimeError(f'DB 접속 환경변수가 누락되었습니다: {missing_names}')
 
-    safe_page = max(1, int(page or 1))
-    safe_page_size = max(1, min(int(page_size or 30), 100))
+    safe_page = parse_positive_int(page, 1, 1, 100000)
+    safe_page_size = parse_positive_int(page_size, 30, 1, 100)
     offset = (safe_page - 1) * safe_page_size
 
-    normalized_item_id = normalize_target(item_id)
+    normalized_item_id = normalize_item_id_for_stats(item_id)
     normalized_item_name = str(item_name or '').strip()
 
     where_clauses = []
@@ -373,7 +533,7 @@ def search_stats_items(item_id, item_name, page, page_size):
                 LIMIT %s OFFSET %s
             """
             cursor.execute(list_sql, tuple(params + [safe_page_size, offset]))
-            items = cursor.fetchall()
+            items = [serialize_db_row(row) for row in cursor.fetchall()]
 
         total_pages = max(1, (total_count + safe_page_size - 1) // safe_page_size)
         return {
@@ -412,7 +572,8 @@ def fetch_item_detail(item_id):
     try:
         with conn.cursor() as cursor:
             cursor.execute('SELECT * FROM g5_shop_item WHERE it_id = %s LIMIT 1', (item_id,))
-            return cursor.fetchone()
+            row = cursor.fetchone()
+            return serialize_db_row(row) if row else None
     finally:
         conn.close()
 
@@ -427,7 +588,7 @@ def update_item_detail(item_id, item_data):
         missing_names = ', '.join(missing)
         raise RuntimeError(f'DB 접속 환경변수가 누락되었습니다: {missing_names}')
 
-    normalized_id = normalize_target(item_id)
+    normalized_id = normalize_item_id_for_stats(item_id)
     if not normalized_id:
         raise RuntimeError('유효한 상품코드가 아닙니다.')
 
@@ -454,7 +615,7 @@ def update_item_detail(item_id, item_data):
             for column in editable_columns:
                 if column in item_data:
                     updates.append(f'`{column}` = %s')
-                    values.append(item_data.get(column))
+                    values.append(coerce_item_field_value(column, item_data.get(column)))
 
             if not updates:
                 return {'updated': False, 'affected': 0, 'notFound': False}
@@ -482,7 +643,7 @@ def delete_item_detail(item_id):
         missing_names = ', '.join(missing)
         raise RuntimeError(f'DB 접속 환경변수가 누락되었습니다: {missing_names}')
 
-    normalized_id = normalize_target(item_id)
+    normalized_id = normalize_item_id_for_stats(item_id)
     if not normalized_id:
         raise RuntimeError('유효한 상품코드가 아닙니다.')
 
@@ -671,7 +832,7 @@ def stats_items():
 
 @app.route('/stats-item/<item_id>', methods=['GET'])
 def stats_item_detail(item_id):
-    normalized_id = normalize_target(item_id)
+    normalized_id = normalize_item_id_for_stats(item_id)
     if not normalized_id:
         return jsonify({'success': False, 'message': '유효한 상품코드가 아닙니다.'}), 400
 
@@ -695,6 +856,8 @@ def stats_item_update(item_id):
 
     try:
         result = update_item_detail(item_id, item_data)
+    except ValueError as exc:
+        return jsonify({'success': False, 'message': str(exc)}), 400
     except Exception as exc:
         return jsonify({'success': False, 'message': '데이터 수정에 실패했습니다.', 'error': str(exc)}), 500
 
