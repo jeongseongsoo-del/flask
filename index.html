@@ -49,6 +49,9 @@
     <script>
       const pageContent = document.getElementById('page-content');
       const menuLinks = document.querySelectorAll('.menu-link');
+      const previewBaseUrl = window.location.hostname && window.location.hostname !== 'file'
+        ? `${window.location.protocol}//${window.location.host}`
+        : 'http://127.0.0.1:5000';
 
       const pages = {
         dashboard: {
@@ -78,6 +81,141 @@
         }
       };
 
+      function escapeHtml(value) {
+        return String(value ?? '')
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;')
+          .replace(/"/g, '&quot;')
+          .replace(/'/g, '&#39;');
+      }
+
+      function normalizeCell(value) {
+        const text = String(value ?? '').trim();
+        return text ? escapeHtml(text) : '-';
+      }
+
+      async function renderStatsPage() {
+        pageContent.innerHTML = `
+          <section class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+            <div class="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <p class="text-sm font-medium text-indigo-600">수집 결과 목록</p>
+                <h1 class="text-2xl font-semibold text-slate-900">통계</h1>
+              </div>
+              <div class="flex items-center gap-2">
+                <button id="stats-refresh-btn" class="rounded-xl border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600 transition hover:bg-slate-100">새로고침</button>
+                <span id="stats-selected-count" class="text-sm text-slate-500">선택 0건</span>
+              </div>
+            </div>
+            <div id="stats-content" class="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">목록을 불러오는 중...</div>
+          </section>
+        `;
+
+        const statsContent = document.getElementById('stats-content');
+        const selectedCountLabel = document.getElementById('stats-selected-count');
+        const refreshBtn = document.getElementById('stats-refresh-btn');
+
+        const loadStats = async () => {
+          statsContent.textContent = '목록을 불러오는 중...';
+          try {
+            const response = await fetch(`${previewBaseUrl}/stats-items?limit=200`);
+            const data = await response.json();
+            if (!response.ok || !data?.success) {
+              throw new Error(data?.message || '통계 목록 조회에 실패했습니다.');
+            }
+
+            const rows = Array.isArray(data.items) ? data.items : [];
+            if (rows.length === 0) {
+              statsContent.innerHTML = '<div class="text-slate-500">저장된 데이터가 없습니다.</div>';
+              selectedCountLabel.textContent = '선택 0건';
+              return;
+            }
+
+            const bodyRows = rows.map((row) => `
+              <tr class="border-b border-slate-100 align-top">
+                <td class="px-3 py-2 text-center"><input type="checkbox" class="stats-row-checkbox h-4 w-4 rounded border-slate-300" data-item-id="${escapeHtml(row.it_id)}" /></td>
+                <td class="px-3 py-2 font-medium text-slate-800">${normalizeCell(row.it_id)}</td>
+                <td class="px-3 py-2">${normalizeCell(row.it_name)}</td>
+                <td class="px-3 py-2">${normalizeCell(row.it_seo_title)}</td>
+                <td class="px-3 py-2">${normalizeCell(row.it_brand)}</td>
+                <td class="px-3 py-2">${normalizeCell(row.it_model)}</td>
+                <td class="px-3 py-2">${normalizeCell(row.it_basic)}</td>
+                <td class="px-3 py-2 max-w-[320px] whitespace-pre-wrap break-words">${normalizeCell(row.it_explan)}</td>
+                <td class="px-3 py-2 text-right">${normalizeCell(row.it_price)}</td>
+                <td class="px-3 py-2 text-right">${normalizeCell(row.it_stock_qty)}</td>
+                <td class="px-3 py-2">${normalizeCell(row.it_shop_memo)}</td>
+                <td class="px-3 py-2 text-center">${normalizeCell(row.it_sc_type)}</td>
+                <td class="px-3 py-2 text-right">${normalizeCell(row.it_sc_price)}</td>
+                <td class="px-3 py-2 max-w-[260px] break-all">${normalizeCell(row.it_1)}</td>
+              </tr>
+            `).join('');
+
+            statsContent.innerHTML = `
+              <div class="mb-2 text-xs text-slate-500">총 ${rows.length}건</div>
+              <div class="overflow-auto rounded-xl border border-slate-200 bg-white">
+                <table class="min-w-[1800px] text-xs leading-5 text-slate-700">
+                  <thead class="sticky top-0 bg-slate-100 text-slate-600">
+                    <tr>
+                      <th class="px-3 py-2 text-center"><input type="checkbox" id="stats-select-all" class="h-4 w-4 rounded border-slate-300" /></th>
+                      <th class="px-3 py-2 text-left">it_id</th>
+                      <th class="px-3 py-2 text-left">it_name</th>
+                      <th class="px-3 py-2 text-left">it_seo_title</th>
+                      <th class="px-3 py-2 text-left">it_brand</th>
+                      <th class="px-3 py-2 text-left">it_model</th>
+                      <th class="px-3 py-2 text-left">it_basic</th>
+                      <th class="px-3 py-2 text-left">it_explan</th>
+                      <th class="px-3 py-2 text-right">it_price</th>
+                      <th class="px-3 py-2 text-right">it_stock_qty</th>
+                      <th class="px-3 py-2 text-left">it_shop_memo</th>
+                      <th class="px-3 py-2 text-center">it_sc_type</th>
+                      <th class="px-3 py-2 text-right">it_sc_price</th>
+                      <th class="px-3 py-2 text-left">it_1</th>
+                    </tr>
+                  </thead>
+                  <tbody>${bodyRows}</tbody>
+                </table>
+              </div>
+            `;
+
+            const selectAll = document.getElementById('stats-select-all');
+            const checkboxes = Array.from(document.querySelectorAll('.stats-row-checkbox'));
+            const syncSelectedCount = () => {
+              const selectedCount = checkboxes.filter((checkbox) => checkbox.checked).length;
+              selectedCountLabel.textContent = `선택 ${selectedCount}건`;
+            };
+
+            selectAll?.addEventListener('change', () => {
+              checkboxes.forEach((checkbox) => {
+                checkbox.checked = selectAll.checked;
+              });
+              syncSelectedCount();
+            });
+
+            checkboxes.forEach((checkbox) => {
+              checkbox.addEventListener('change', () => {
+                const allChecked = checkboxes.length > 0 && checkboxes.every((item) => item.checked);
+                if (selectAll) {
+                  selectAll.checked = allChecked;
+                }
+                syncSelectedCount();
+              });
+            });
+
+            syncSelectedCount();
+          } catch (error) {
+            statsContent.innerHTML = `<div class="text-rose-600">${escapeHtml(error.message || '통계 목록을 불러오지 못했습니다.')}</div>`;
+            selectedCountLabel.textContent = '선택 0건';
+          }
+        };
+
+        refreshBtn?.addEventListener('click', () => {
+          loadStats();
+        });
+
+        await loadStats();
+      }
+
       async function renderPage(pageKey) {
         const page = pages[pageKey] || pages.dashboard;
 
@@ -87,6 +225,11 @@
               <iframe src="ctx-single-collection.html" class="min-h-[620px] w-full rounded-2xl border-0"></iframe>
             </section>
           `;
+          return;
+        }
+
+        if (pageKey === 'stats') {
+          await renderStatsPage();
           return;
         }
 

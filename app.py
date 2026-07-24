@@ -32,7 +32,7 @@ def is_authenticated():
 
 
 def is_api_request():
-    return request.path.startswith('/collect') or request.path.startswith('/lookup-proino') or request.path.startswith('/item-detail') or request.path.startswith('/save-item')
+    return request.path.startswith('/collect') or request.path.startswith('/lookup-proino') or request.path.startswith('/item-detail') or request.path.startswith('/save-item') or request.path.startswith('/stats-items')
 
 
 @app.before_request
@@ -256,6 +256,57 @@ def execute_item_insert_sql(sql, item_id):
         conn.close()
 
 
+def fetch_stats_items(limit):
+    if pymysql is None:
+        raise RuntimeError('pymysql 패키지가 설치되지 않았습니다. requirements 설치 후 다시 시도하세요.')
+
+    config = get_db_config()
+    missing = validate_db_config(config)
+    if missing:
+        missing_names = ', '.join(missing)
+        raise RuntimeError(f'DB 접속 환경변수가 누락되었습니다: {missing_names}')
+
+    safe_limit = max(1, min(int(limit), 500))
+    conn = pymysql.connect(
+        host=config['host'],
+        port=config['port'],
+        user=config['user'],
+        password=config['password'],
+        database=config['database'],
+        charset='utf8mb4',
+        autocommit=True,
+        cursorclass=pymysql.cursors.DictCursor
+    )
+    try:
+        with conn.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT
+                    it_id,
+                    it_name,
+                    it_seo_title,
+                    it_brand,
+                    it_model,
+                    it_basic,
+                    it_explan,
+                    it_price,
+                    it_stock_qty,
+                    it_shop_memo,
+                    it_sc_type,
+                    it_sc_price,
+                    it_1,
+                    it_time
+                FROM g5_shop_item
+                ORDER BY it_time DESC, it_id DESC
+                LIMIT %s
+                """,
+                (safe_limit,)
+            )
+            return cursor.fetchall()
+    finally:
+        conn.close()
+
+
 @app.route('/health', methods=['GET'])
 def health():
     return jsonify({'status': 'ok', 'appState': 'running' if app_state['running'] else 'stopped'})
@@ -401,6 +452,17 @@ def save_item():
         return jsonify({'success': False, 'message': f'이미 등록된 상품코드입니다: {item_id}', 'duplicate': True, 'itemId': item_id}), 409
 
     return jsonify({'success': True, 'message': 'DB 저장이 완료되었습니다.', 'affectedRows': insert_result.get('affected', 0), 'itemId': item_id})
+
+
+@app.route('/stats-items', methods=['GET'])
+def stats_items():
+    limit = request.args.get('limit', '100')
+    try:
+        items = fetch_stats_items(limit)
+    except Exception as exc:
+        return jsonify({'success': False, 'message': '통계 목록 조회에 실패했습니다.', 'error': str(exc)}), 500
+
+    return jsonify({'success': True, 'count': len(items), 'items': items})
 
 
 if __name__ == '__main__':
