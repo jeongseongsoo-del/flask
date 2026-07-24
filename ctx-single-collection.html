@@ -328,9 +328,11 @@
 
         const impDelvServ = String(item?.imp_delv_serv || '').trim().toUpperCase();
         const itScType = impDelvServ === 'Y' ? 1 : 2;
-        const itScPrice = impDelvServ === 'Y'
-          ? Math.round(itPrice + (shippingFee * 1.1))
-          : Math.round(shippingFee);
+        const shippingWithTax = Math.round(shippingFee * 1.1);
+        if (impDelvServ === 'Y') {
+          itPrice += shippingWithTax;
+        }
+        const itScPrice = impDelvServ === 'Y' ? 0 : Math.round(shippingFee);
 
         const metaHtml = latestMetaInfoText
           ? `<pre>${escapeHtml(latestMetaInfoText)}</pre>`
