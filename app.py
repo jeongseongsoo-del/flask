@@ -669,6 +669,51 @@ def delete_item_detail(item_id):
         conn.close()
 
 
+def delete_items_detail(item_ids):
+    if pymysql is None:
+        raise RuntimeError('pymysql 패키지가 설치되지 않았습니다. requirements 설치 후 다시 시도하세요.')
+
+    config = get_db_config()
+    missing = validate_db_config(config)
+    if missing:
+        missing_names = ', '.join(missing)
+        raise RuntimeError(f'DB 접속 환경변수가 누락되었습니다: {missing_names}')
+
+    normalized_ids = []
+    seen_ids = set()
+    for item_id in item_ids or []:
+        normalized_id = normalize_item_id_for_stats(item_id)
+        if not normalized_id or normalized_id in seen_ids:
+            continue
+        seen_ids.add(normalized_id)
+        normalized_ids.append(normalized_id)
+
+    if not normalized_ids:
+        raise RuntimeError('삭제할 상품코드가 없습니다.')
+
+    conn = pymysql.connect(
+        host=config['host'],
+        port=config['port'],
+        user=config['user'],
+        password=config['password'],
+        database=config['database'],
+        charset='utf8mb4',
+        autocommit=False,
+        cursorclass=pymysql.cursors.Cursor
+    )
+    try:
+        placeholders = ', '.join(['%s'] * len(normalized_ids))
+        with conn.cursor() as cursor:
+            affected = cursor.execute(f'DELETE FROM g5_shop_item WHERE it_id IN ({placeholders})', tuple(normalized_ids))
+        conn.commit()
+        return {'affected': affected, 'requested': len(normalized_ids)}
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
 @app.route('/health', methods=['GET'])
 def health():
     return jsonify({'status': 'ok', 'appState': 'running' if app_state['running'] else 'stopped'})
@@ -878,6 +923,31 @@ def stats_item_delete(item_id):
         return jsonify({'success': False, 'message': '삭제 대상이 존재하지 않습니다.'}), 404
 
     return jsonify({'success': True, 'message': '삭제가 완료되었습니다.', 'affectedRows': affected})
+
+
+@app.route('/stats-items/delete-selected', methods=['POST'])
+def stats_items_delete_selected():
+    payload = request.get_json(silent=True) or {}
+    item_ids = payload.get('itemIds')
+    if not isinstance(item_ids, list):
+        return jsonify({'success': False, 'message': '삭제할 상품코드 목록 형식이 올바르지 않습니다.'}), 400
+
+    try:
+        result = delete_items_detail(item_ids)
+    except ValueError as exc:
+        return jsonify({'success': False, 'message': str(exc)}), 400
+    except Exception as exc:
+        return jsonify({'success': False, 'message': '선택 삭제에 실패했습니다.', 'error': str(exc)}), 500
+
+    if result.get('affected', 0) <= 0:
+        return jsonify({'success': False, 'message': '삭제할 데이터가 없습니다.'}), 404
+
+    return jsonify({
+        'success': True,
+        'message': f'선택한 {result.get("requested", 0)}건을 삭제했습니다.',
+        'affectedRows': result.get('affected', 0),
+        'requested': result.get('requested', 0)
+    })
 
 
 if __name__ == '__main__':

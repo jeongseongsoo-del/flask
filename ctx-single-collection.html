@@ -298,6 +298,39 @@
         return [String(nameValue || '').trim(), String(modelValue || '').trim()].filter(Boolean).join(' ');
       }
 
+      function buildProductNameWithBaseShipInfo(productName, baseShipQty, shipUnit) {
+        const cleanProductName = String(productName || '').trim();
+        const cleanBaseShipQty = String(baseShipQty || '').trim();
+        const cleanShipUnit = String(shipUnit || '').trim();
+
+        if (!cleanProductName) {
+          return '';
+        }
+
+        if (!cleanBaseShipQty && !cleanShipUnit) {
+          return cleanProductName;
+        }
+
+        const shipInfo = `${cleanBaseShipQty || '0'}/${cleanShipUnit || '-'}`;
+        return `${cleanProductName} / ${shipInfo}`;
+      }
+
+      function buildExplainTopNotice(itemCd, item) {
+        const formattedProductCode = formatProdCode(itemCd) || itemCd;
+        const qties = String(item?.qties || '').split(',');
+        const fallbackBaseShipQty = String(qties[0] || '').trim();
+        const fallbackShipUnit = sanitizeMarketplaceText(String(qties[3] || '').trim());
+        const baseShipQtyText = String(collectionFields.baseShipQty.value || '').trim() || fallbackBaseShipQty || '0';
+        const shipUnitText = String(collectionFields.shipUnit.value || '').trim() || fallbackShipUnit || '-';
+
+        return `
+          <div style="margin:0 0 14px 0; padding:12px 14px; border:2px solid #b91c1c; border-left-width:6px; background:#fef2f2; color:#991b1b; font-weight:800; font-size:15px; line-height:1.8; letter-spacing:-0.01em;">
+            <span style="display:inline-block; min-width:150px;">상품코드</span>: ${escapeHtml(formattedProductCode)}<br />
+            <span style="display:inline-block; min-width:150px;">출고수량(주문단위)</span>: ${escapeHtml(baseShipQtyText)}/${escapeHtml(shipUnitText)}
+          </div>
+        `.trim();
+      }
+
       function buildItemInsertSql() {
         if (!latestLookupData) {
           return '';
@@ -334,11 +367,13 @@
         }
         const itScPrice = impDelvServ === 'Y' ? 0 : Math.round(shippingFee);
 
+        const explainTopNotice = buildExplainTopNotice(itemCd, item);
+
         const metaHtml = latestMetaInfoText
           ? `<pre>${escapeHtml(latestMetaInfoText)}</pre>`
           : '<pre>metaInfoTbl 값 없음</pre>';
         const detailHtml = latestCleanDetailHtml || '<div>정리된 상세 HTML 없음</div>';
-        const explainHtml = `${metaHtml}\n${detailHtml}`;
+        const explainHtml = `${explainTopNotice}\n${metaHtml}\n${detailHtml}`;
 
         const nowText = formatSqlDateTime(new Date());
         const infoValue = 'a:6:{s:12:"product_name";s:22:"상품페이지 참고";s:10:"model_name";s:22:"상품페이지 참고";s:16:"certified_by_law";s:22:"상품페이지 참고";s:6:"origin";s:22:"상품페이지 참고";s:5:"maker";s:22:"상품페이지 참고";s:2:"as";s:22:"상품페이지 참고";}';
@@ -547,8 +582,9 @@
         const stockTotal = toIntegerValue(item?.d1sum) + toIntegerValue(item?.s1sum);
         const supplyPrice = toIntegerValue(item?.std_unit_pric);
         const imageFile = item?.img_file || '';
+        const productNameWithBaseShipInfo = buildProductNameWithBaseShipInfo(productName, baseShipQty, shipUnit);
 
-        collectionFields.productName.value = productName;
+        collectionFields.productName.value = productNameWithBaseShipInfo;
         collectionFields.brand.value = sanitizeMarketplaceText(item?.brnd_nm || '');
         collectionFields.model.value = sanitizeMarketplaceText(item?.modl_no || '');
         collectionFields.spec.value = sanitizeMarketplaceText(item?.item_stdz || '');
@@ -565,7 +601,7 @@
 
         resultBox.innerHTML = `
           <div class="rounded-xl bg-emerald-50 p-3 text-emerald-700">상품정보가 자동 입력되었습니다.</div>
-          <div class="rounded-xl bg-slate-100 p-3">생성 상품명: ${productName}</div>
+          <div class="rounded-xl bg-slate-100 p-3">생성 상품명: ${productNameWithBaseShipInfo}</div>
           <div class="rounded-xl bg-slate-100 p-3">브랜드: ${collectionFields.brand.value || '-'}</div>
           <div class="rounded-xl bg-slate-100 p-3">모델명: ${collectionFields.model.value || '-'}</div>
           <div class="rounded-xl bg-slate-100 p-3">규격: ${collectionFields.spec.value || '-'}</div>
@@ -605,13 +641,32 @@
           element.removeAttribute('id');
         });
 
-        return clone.outerHTML;
+        return detailRoot === doc.body ? clone.innerHTML : clone.outerHTML;
+      }
+
+      function buildExplainContentHtml(itemCd, item, metaText, detailHtml) {
+        const explainTopNotice = buildExplainTopNotice(itemCd, item);
+        const metaHtml = metaText
+          ? `<pre>${escapeHtml(metaText)}</pre>`
+          : '<pre>metaInfoTbl 값 없음</pre>';
+        const detailHtmlBlock = detailHtml || '<div>정리된 상세 HTML 없음</div>';
+
+        return `
+          <div class="space-y-3">
+            ${explainTopNotice}
+            ${metaHtml}
+            ${detailHtmlBlock}
+          </div>
+        `.trim();
       }
 
       function renderCleanDetailPreview(html) {
         const sanitized = sanitizeDetailHtml(html);
         latestCleanDetailHtml = sanitized || '';
-        cleanDetailPreview.innerHTML = sanitized || '<div class="text-slate-500">정리할 상세 HTML이 없습니다.</div>';
+        const itemCd = sanitizeProductCode(targetInput.value || latestLookupData?.target || '');
+        const item = latestLookupData?.payload?.result?.items?.find((entry) => !!entry) || {};
+        const explainContent = itemCd ? buildExplainContentHtml(itemCd, item, latestMetaInfoText, sanitized) : '';
+        cleanDetailPreview.innerHTML = explainContent || '<div class="text-slate-500">정리할 상세 HTML이 없습니다.</div>';
         renderSqlPreview();
       }
 

@@ -114,9 +114,6 @@
               element.removeAttribute(attribute.name);
               return;
             }
-            if (attrName === 'style') {
-              element.removeAttribute(attribute.name);
-            }
           });
         });
 
@@ -160,7 +157,8 @@
                 <p class="text-sm font-medium text-indigo-600">수집 결과 목록</p>
                 <h1 class="text-2xl font-semibold text-slate-900">통계</h1>
               </div>
-              <div class="flex items-center gap-2">
+              <div class="flex flex-wrap items-center gap-2">
+                <button id="stats-selected-delete-btn" class="rounded-xl border border-rose-300 px-4 py-2 text-sm font-semibold text-rose-600 transition hover:bg-rose-50">선택 삭제</button>
                 <button id="stats-refresh-btn" class="rounded-xl border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600 transition hover:bg-slate-100">새로고침</button>
                 <span id="stats-selected-count" class="text-sm text-slate-500">선택 0건</span>
               </div>
@@ -173,7 +171,7 @@
               <button id="stats-search-reset-btn" class="rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100">초기화</button>
             </div>
 
-            <div id="stats-content" class="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">목록을 불러오는 중...</div>
+            <div id="stats-content" class="overflow-x-auto rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">목록을 불러오는 중...</div>
             <div id="stats-pagination" class="mt-3 flex items-center justify-between text-sm text-slate-600"></div>
           </section>
           <div id="stats-modal" class="fixed inset-0 z-50 hidden items-center justify-center bg-slate-900/60 p-4">
@@ -204,6 +202,7 @@
         const statsContent = document.getElementById('stats-content');
         const statsPagination = document.getElementById('stats-pagination');
         const selectedCountLabel = document.getElementById('stats-selected-count');
+        const selectedDeleteBtn = document.getElementById('stats-selected-delete-btn');
         const refreshBtn = document.getElementById('stats-refresh-btn');
         const searchItemIdInput = document.getElementById('stats-search-item-id');
         const searchItemNameInput = document.getElementById('stats-search-item-name');
@@ -231,6 +230,60 @@
 
         let latestStatsRows = [];
         let activeDetailItemId = '';
+        let activeRowCheckboxes = [];
+
+        const getSelectedItemIds = () => activeRowCheckboxes
+          .filter((checkbox) => checkbox.checked)
+          .map((checkbox) => checkbox.getAttribute('data-item-id') || '')
+          .filter(Boolean);
+
+        const syncSelectedCount = () => {
+          const selectedCount = getSelectedItemIds().length;
+          if (selectedCountLabel) {
+            selectedCountLabel.textContent = `선택 ${selectedCount}건`;
+          }
+          if (selectedDeleteBtn) {
+            selectedDeleteBtn.disabled = selectedCount === 0;
+            selectedDeleteBtn.classList.toggle('opacity-50', selectedCount === 0);
+            selectedDeleteBtn.classList.toggle('cursor-not-allowed', selectedCount === 0);
+          }
+        };
+
+        const deleteSelectedItems = async () => {
+          const itemIds = getSelectedItemIds();
+          if (itemIds.length === 0) {
+            alert('삭제할 항목을 체크하세요.');
+            return;
+          }
+
+          const confirmed = confirm(`선택한 ${itemIds.length}건을 삭제하시겠습니까?`);
+          if (!confirmed) {
+            return;
+          }
+
+          if (selectedDeleteBtn) {
+            selectedDeleteBtn.disabled = true;
+          }
+
+          try {
+            const response = await fetch(`${previewBaseUrl}/stats-items/delete-selected`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ itemIds })
+            });
+            const data = await response.json();
+            if (!response.ok || !data?.success) {
+              throw new Error(data?.message || '선택 삭제에 실패했습니다.');
+            }
+
+            alert(data.message || '선택 삭제가 완료되었습니다.');
+            await loadStats();
+          } catch (error) {
+            alert(error.message || '선택 삭제에 실패했습니다.');
+          } finally {
+            syncSelectedCount();
+          }
+        };
 
         const closeModal = () => {
           statsModal?.classList.add('hidden');
@@ -502,8 +555,11 @@
 
             statsContent.innerHTML = `
               <div class="mb-2 text-xs text-slate-500">현재 페이지 ${rows.length}건</div>
-              <div class="overflow-auto rounded-xl border border-slate-200 bg-white">
-                <table class="min-w-[1800px] text-xs leading-5 text-slate-700">
+              <div id="stats-table-scroll-top" class="sticky top-16 z-10 mb-2 overflow-x-auto overflow-y-hidden rounded-lg border border-slate-200 bg-white/95 shadow-sm backdrop-blur">
+                <div id="stats-table-scroll-width" class="h-4"></div>
+              </div>
+              <div id="stats-table-scroll-body" class="overflow-x-auto overflow-y-auto rounded-xl border border-slate-200 bg-white">
+                <table class="min-w-[1800px] whitespace-nowrap text-xs leading-5 text-slate-700">
                   <thead class="sticky top-0 bg-slate-100 text-slate-600">
                     <tr>
                       <th class="px-3 py-2 text-center"><input type="checkbox" id="stats-select-all" class="h-4 w-4 rounded border-slate-300" /></th>
@@ -527,23 +583,48 @@
               </div>
             `;
 
+            const topScroll = document.getElementById('stats-table-scroll-top');
+            const bodyScroll = document.getElementById('stats-table-scroll-body');
+            const widthProxy = document.getElementById('stats-table-scroll-width');
+            const tableElement = bodyScroll?.querySelector('table');
+
+            if (topScroll && bodyScroll && widthProxy && tableElement) {
+              widthProxy.style.width = `${tableElement.scrollWidth}px`;
+              let syncingFromTop = false;
+              let syncingFromBody = false;
+
+              topScroll.addEventListener('scroll', () => {
+                if (syncingFromBody) {
+                  return;
+                }
+                syncingFromTop = true;
+                bodyScroll.scrollLeft = topScroll.scrollLeft;
+                syncingFromTop = false;
+              });
+
+              bodyScroll.addEventListener('scroll', () => {
+                if (syncingFromTop) {
+                  return;
+                }
+                syncingFromBody = true;
+                topScroll.scrollLeft = bodyScroll.scrollLeft;
+                syncingFromBody = false;
+              });
+            }
+
             const selectAll = document.getElementById('stats-select-all');
-            const checkboxes = Array.from(document.querySelectorAll('.stats-row-checkbox'));
-            const syncSelectedCount = () => {
-              const selectedCount = checkboxes.filter((checkbox) => checkbox.checked).length;
-              selectedCountLabel.textContent = `선택 ${selectedCount}건`;
-            };
+            activeRowCheckboxes = Array.from(document.querySelectorAll('.stats-row-checkbox'));
 
             selectAll?.addEventListener('change', () => {
-              checkboxes.forEach((checkbox) => {
+              activeRowCheckboxes.forEach((checkbox) => {
                 checkbox.checked = selectAll.checked;
               });
               syncSelectedCount();
             });
 
-            checkboxes.forEach((checkbox) => {
+            activeRowCheckboxes.forEach((checkbox) => {
               checkbox.addEventListener('change', () => {
-                const allChecked = checkboxes.length > 0 && checkboxes.every((item) => item.checked);
+                const allChecked = activeRowCheckboxes.length > 0 && activeRowCheckboxes.every((item) => item.checked);
                 if (selectAll) {
                   selectAll.checked = allChecked;
                 }
@@ -581,9 +662,16 @@
           } catch (error) {
             statsContent.innerHTML = `<div class="text-rose-600">${escapeHtml(error.message || '통계 목록을 불러오지 못했습니다.')}</div>`;
             selectedCountLabel.textContent = '선택 0건';
+            if (selectedDeleteBtn) {
+              selectedDeleteBtn.disabled = true;
+            }
             statsPagination.innerHTML = '';
           }
         };
+
+        selectedDeleteBtn?.addEventListener('click', () => {
+          deleteSelectedItems();
+        });
 
         refreshBtn?.addEventListener('click', () => {
           loadStats();
