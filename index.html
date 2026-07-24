@@ -123,6 +123,35 @@
         return (doc.body?.innerHTML || '').trim();
       }
 
+      function createDetailFieldEditor(field, value) {
+        const safeField = escapeHtml(field);
+        const normalizedValue = value === null || value === undefined ? '' : String(value);
+        const escapedValue = escapeHtml(normalizedValue);
+        const useTextArea = normalizedValue.length > 120 || ['it_explan', 'it_info_value'].includes(field);
+
+        if (useTextArea) {
+          return `
+            <tr class="border-b border-slate-100 align-top">
+              <th class="w-[220px] px-3 py-2 text-left text-xs font-semibold text-slate-600">${safeField}</th>
+              <td class="px-3 py-2">
+                <textarea data-detail-field="${safeField}" rows="4" class="w-full rounded-lg border border-slate-300 px-2 py-1 text-xs text-slate-700">${escapedValue}</textarea>
+              </td>
+            </tr>
+          `;
+        }
+
+        const readOnlyAttr = field === 'it_id' ? 'readonly' : '';
+        const readOnlyClass = field === 'it_id' ? 'bg-slate-100 text-slate-500' : '';
+        return `
+          <tr class="border-b border-slate-100 align-top">
+            <th class="w-[220px] px-3 py-2 text-left text-xs font-semibold text-slate-600">${safeField}</th>
+            <td class="px-3 py-2">
+              <input data-detail-field="${safeField}" value="${escapedValue}" ${readOnlyAttr} class="w-full rounded-lg border border-slate-300 px-2 py-1 text-xs text-slate-700 ${readOnlyClass}" />
+            </td>
+          </tr>
+        `;
+      }
+
       async function renderStatsPage() {
         pageContent.innerHTML = `
           <section class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
@@ -136,7 +165,16 @@
                 <span id="stats-selected-count" class="text-sm text-slate-500">선택 0건</span>
               </div>
             </div>
+
+            <div class="mb-4 grid gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-3 md:grid-cols-[180px_1fr_auto_auto]">
+              <input id="stats-search-item-id" placeholder="상품코드(일치)" class="rounded-xl border border-slate-300 px-3 py-2 text-sm" />
+              <input id="stats-search-item-name" placeholder="상품명(like)" class="rounded-xl border border-slate-300 px-3 py-2 text-sm" />
+              <button id="stats-search-btn" class="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700">검색</button>
+              <button id="stats-search-reset-btn" class="rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100">초기화</button>
+            </div>
+
             <div id="stats-content" class="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">목록을 불러오는 중...</div>
+            <div id="stats-pagination" class="mt-3 flex items-center justify-between text-sm text-slate-600"></div>
           </section>
           <div id="stats-modal" class="fixed inset-0 z-50 hidden items-center justify-center bg-slate-900/60 p-4">
             <div class="max-h-[88vh] w-full max-w-4xl overflow-hidden rounded-2xl bg-white shadow-2xl">
@@ -147,16 +185,52 @@
               <div id="stats-modal-body" class="max-h-[74vh] overflow-auto p-4 text-sm text-slate-700"></div>
             </div>
           </div>
+
+          <div id="stats-item-modal" class="fixed inset-0 z-50 hidden items-center justify-center bg-slate-900/60 p-4">
+            <div class="max-h-[92vh] w-full max-w-5xl overflow-hidden rounded-2xl bg-white shadow-2xl">
+              <div class="flex items-center justify-between border-b border-slate-200 px-4 py-3">
+                <h3 id="stats-item-modal-title" class="text-base font-semibold text-slate-900">상품 상세</h3>
+                <button id="stats-item-modal-close" type="button" class="rounded-lg border border-slate-200 px-3 py-1.5 text-xs text-slate-600 hover:bg-slate-100">닫기</button>
+              </div>
+              <div id="stats-item-modal-body" class="max-h-[72vh] overflow-auto p-4 text-sm text-slate-700"></div>
+              <div class="flex items-center justify-end gap-2 border-t border-slate-200 px-4 py-3">
+                <button id="stats-item-delete-btn" type="button" class="rounded-lg border border-rose-300 px-3 py-1.5 text-xs font-semibold text-rose-600 hover:bg-rose-50">삭제</button>
+                <button id="stats-item-save-btn" type="button" class="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700">수정 저장</button>
+              </div>
+            </div>
+          </div>
         `;
 
         const statsContent = document.getElementById('stats-content');
+        const statsPagination = document.getElementById('stats-pagination');
         const selectedCountLabel = document.getElementById('stats-selected-count');
         const refreshBtn = document.getElementById('stats-refresh-btn');
+        const searchItemIdInput = document.getElementById('stats-search-item-id');
+        const searchItemNameInput = document.getElementById('stats-search-item-name');
+        const searchBtn = document.getElementById('stats-search-btn');
+        const searchResetBtn = document.getElementById('stats-search-reset-btn');
         const statsModal = document.getElementById('stats-modal');
         const statsModalTitle = document.getElementById('stats-modal-title');
         const statsModalBody = document.getElementById('stats-modal-body');
         const statsModalClose = document.getElementById('stats-modal-close');
+        const statsItemModal = document.getElementById('stats-item-modal');
+        const statsItemModalTitle = document.getElementById('stats-item-modal-title');
+        const statsItemModalBody = document.getElementById('stats-item-modal-body');
+        const statsItemModalClose = document.getElementById('stats-item-modal-close');
+        const statsItemSaveBtn = document.getElementById('stats-item-save-btn');
+        const statsItemDeleteBtn = document.getElementById('stats-item-delete-btn');
+
+        const statsState = {
+          page: 1,
+          pageSize: 30,
+          totalPages: 1,
+          totalCount: 0,
+          itemId: '',
+          itemName: ''
+        };
+
         let latestStatsRows = [];
+        let activeDetailItemId = '';
 
         const closeModal = () => {
           statsModal?.classList.add('hidden');
@@ -213,20 +287,187 @@
           }
         });
 
+        const closeItemModal = () => {
+          statsItemModal?.classList.add('hidden');
+          statsItemModal?.classList.remove('flex');
+          if (statsItemModalBody) {
+            statsItemModalBody.innerHTML = '';
+          }
+          activeDetailItemId = '';
+        };
+
+        statsItemModalClose?.addEventListener('click', () => {
+          closeItemModal();
+        });
+
+        statsItemModal?.addEventListener('click', (event) => {
+          if (event.target === statsItemModal) {
+            closeItemModal();
+          }
+        });
+
+        const buildStatsQueryString = () => {
+          const params = new URLSearchParams();
+          params.set('page', String(statsState.page));
+          params.set('pageSize', String(statsState.pageSize));
+          if (statsState.itemId) {
+            params.set('itemId', statsState.itemId);
+          }
+          if (statsState.itemName) {
+            params.set('itemName', statsState.itemName);
+          }
+          return params.toString();
+        };
+
+        const renderPagination = () => {
+          const disablePrev = statsState.page <= 1 ? 'disabled' : '';
+          const disableNext = statsState.page >= statsState.totalPages ? 'disabled' : '';
+          statsPagination.innerHTML = `
+            <div>총 ${statsState.totalCount}건 / 페이지 ${statsState.page} / ${statsState.totalPages}</div>
+            <div class="flex items-center gap-2">
+              <button id="stats-page-prev" ${disablePrev} class="rounded-lg border border-slate-300 px-3 py-1 text-xs font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-40">이전</button>
+              <button id="stats-page-next" ${disableNext} class="rounded-lg border border-slate-300 px-3 py-1 text-xs font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-40">다음</button>
+            </div>
+          `;
+
+          document.getElementById('stats-page-prev')?.addEventListener('click', () => {
+            if (statsState.page <= 1) {
+              return;
+            }
+            statsState.page -= 1;
+            loadStats();
+          });
+
+          document.getElementById('stats-page-next')?.addEventListener('click', () => {
+            if (statsState.page >= statsState.totalPages) {
+              return;
+            }
+            statsState.page += 1;
+            loadStats();
+          });
+        };
+
+        const openItemDetailModal = async (itemId) => {
+          if (!itemId) {
+            return;
+          }
+
+          activeDetailItemId = String(itemId);
+          statsItemModalTitle.textContent = `상품 상세 - ${activeDetailItemId}`;
+          statsItemModalBody.innerHTML = '상세 데이터를 불러오는 중...';
+          statsItemModal?.classList.remove('hidden');
+          statsItemModal?.classList.add('flex');
+
+          try {
+            const response = await fetch(`${previewBaseUrl}/stats-item/${encodeURIComponent(activeDetailItemId)}`);
+            const data = await response.json();
+            if (!response.ok || !data?.success) {
+              throw new Error(data?.message || '상세 조회에 실패했습니다.');
+            }
+
+            const item = data.item || {};
+            const fieldRows = Object.entries(item).map(([field, value]) => createDetailFieldEditor(field, value)).join('');
+            statsItemModalBody.innerHTML = `
+              <div class="mb-2 text-xs text-slate-500">it_id를 제외한 모든 필드는 수정 가능합니다.</div>
+              <div class="overflow-auto rounded-xl border border-slate-200 bg-white">
+                <table class="min-w-full text-xs">${fieldRows}</table>
+              </div>
+            `;
+          } catch (error) {
+            statsItemModalBody.innerHTML = `<div class="text-rose-600">${escapeHtml(error.message || '상세 조회에 실패했습니다.')}</div>`;
+          }
+        };
+
+        const collectDetailFormData = () => {
+          const payload = {};
+          statsItemModalBody.querySelectorAll('[data-detail-field]').forEach((inputElement) => {
+            const field = inputElement.getAttribute('data-detail-field');
+            if (!field) {
+              return;
+            }
+            payload[field] = inputElement.value;
+          });
+          return payload;
+        };
+
+        statsItemSaveBtn?.addEventListener('click', async () => {
+          if (!activeDetailItemId) {
+            return;
+          }
+
+          const payload = collectDetailFormData();
+          statsItemSaveBtn.disabled = true;
+          statsItemSaveBtn.textContent = '저장 중...';
+
+          try {
+            const response = await fetch(`${previewBaseUrl}/stats-item/${encodeURIComponent(activeDetailItemId)}`, {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ item: payload })
+            });
+            const data = await response.json();
+            if (!response.ok || !data?.success) {
+              throw new Error(data?.message || '수정에 실패했습니다.');
+            }
+
+            closeItemModal();
+            await loadStats();
+          } catch (error) {
+            alert(error.message || '수정에 실패했습니다.');
+          } finally {
+            statsItemSaveBtn.disabled = false;
+            statsItemSaveBtn.textContent = '수정 저장';
+          }
+        });
+
+        statsItemDeleteBtn?.addEventListener('click', async () => {
+          if (!activeDetailItemId) {
+            return;
+          }
+          const confirmed = confirm(`상품코드 ${activeDetailItemId} 데이터를 삭제하시겠습니까?`);
+          if (!confirmed) {
+            return;
+          }
+
+          statsItemDeleteBtn.disabled = true;
+          statsItemDeleteBtn.textContent = '삭제 중...';
+          try {
+            const response = await fetch(`${previewBaseUrl}/stats-item/${encodeURIComponent(activeDetailItemId)}`, {
+              method: 'DELETE'
+            });
+            const data = await response.json();
+            if (!response.ok || !data?.success) {
+              throw new Error(data?.message || '삭제에 실패했습니다.');
+            }
+
+            closeItemModal();
+            await loadStats();
+          } catch (error) {
+            alert(error.message || '삭제에 실패했습니다.');
+          } finally {
+            statsItemDeleteBtn.disabled = false;
+            statsItemDeleteBtn.textContent = '삭제';
+          }
+        });
+
         const loadStats = async () => {
           statsContent.textContent = '목록을 불러오는 중...';
           try {
-            const response = await fetch(`${previewBaseUrl}/stats-items?limit=200`);
+            const response = await fetch(`${previewBaseUrl}/stats-items?${buildStatsQueryString()}`);
             const data = await response.json();
             if (!response.ok || !data?.success) {
               throw new Error(data?.message || '통계 목록 조회에 실패했습니다.');
             }
 
             const rows = Array.isArray(data.items) ? data.items : [];
+            statsState.totalCount = Number.parseInt(data.totalCount || 0, 10) || 0;
+            statsState.totalPages = Number.parseInt(data.totalPages || 1, 10) || 1;
+            statsState.page = Number.parseInt(data.page || statsState.page, 10) || 1;
             latestStatsRows = rows;
             if (rows.length === 0) {
               statsContent.innerHTML = '<div class="text-slate-500">저장된 데이터가 없습니다.</div>';
               selectedCountLabel.textContent = '선택 0건';
+              renderPagination();
               return;
             }
 
@@ -237,11 +478,12 @@
               const imageLink = String(row?.it_1 || '').trim()
                 ? `<button type="button" class="stats-view-link text-indigo-600 hover:underline" data-view-type="image" data-row-index="${rowIndex}">[보기]</button>`
                 : '-';
+              const itemIdLink = `<button type="button" class="stats-item-detail-link font-semibold text-indigo-600 hover:underline" data-item-id="${escapeHtml(row.it_id)}">${normalizeCell(row.it_id)}</button>`;
 
               return `
               <tr class="border-b border-slate-100 align-top">
                 <td class="px-3 py-2 text-center"><input type="checkbox" class="stats-row-checkbox h-4 w-4 rounded border-slate-300" data-item-id="${escapeHtml(row.it_id)}" /></td>
-                <td class="px-3 py-2 font-medium text-slate-800">${normalizeCell(row.it_id)}</td>
+                <td class="px-3 py-2 font-medium text-slate-800">${itemIdLink}</td>
                 <td class="px-3 py-2">${normalizeCell(row.it_name)}</td>
                 <td class="px-3 py-2">${normalizeCell(row.it_seo_title)}</td>
                 <td class="px-3 py-2">${normalizeCell(row.it_brand)}</td>
@@ -259,7 +501,7 @@
             }).join('');
 
             statsContent.innerHTML = `
-              <div class="mb-2 text-xs text-slate-500">총 ${rows.length}건</div>
+              <div class="mb-2 text-xs text-slate-500">현재 페이지 ${rows.length}건</div>
               <div class="overflow-auto rounded-xl border border-slate-200 bg-white">
                 <table class="min-w-[1800px] text-xs leading-5 text-slate-700">
                   <thead class="sticky top-0 bg-slate-100 text-slate-600">
@@ -327,15 +569,58 @@
               });
             });
 
+            statsContent.querySelectorAll('.stats-item-detail-link').forEach((linkElement) => {
+              linkElement.addEventListener('click', () => {
+                const itemId = linkElement.getAttribute('data-item-id') || '';
+                openItemDetailModal(itemId);
+              });
+            });
+
             syncSelectedCount();
+            renderPagination();
           } catch (error) {
             statsContent.innerHTML = `<div class="text-rose-600">${escapeHtml(error.message || '통계 목록을 불러오지 못했습니다.')}</div>`;
             selectedCountLabel.textContent = '선택 0건';
+            statsPagination.innerHTML = '';
           }
         };
 
         refreshBtn?.addEventListener('click', () => {
           loadStats();
+        });
+
+        searchBtn?.addEventListener('click', () => {
+          statsState.itemId = String(searchItemIdInput?.value || '').trim();
+          statsState.itemName = String(searchItemNameInput?.value || '').trim();
+          statsState.page = 1;
+          loadStats();
+        });
+
+        searchResetBtn?.addEventListener('click', () => {
+          if (searchItemIdInput) {
+            searchItemIdInput.value = '';
+          }
+          if (searchItemNameInput) {
+            searchItemNameInput.value = '';
+          }
+          statsState.itemId = '';
+          statsState.itemName = '';
+          statsState.page = 1;
+          loadStats();
+        });
+
+        searchItemIdInput?.addEventListener('keydown', (event) => {
+          if (event.key === 'Enter') {
+            event.preventDefault();
+            searchBtn?.click();
+          }
+        });
+
+        searchItemNameInput?.addEventListener('keydown', (event) => {
+          if (event.key === 'Enter') {
+            event.preventDefault();
+            searchBtn?.click();
+          }
         });
 
         await loadStats();

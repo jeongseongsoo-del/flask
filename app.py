@@ -32,7 +32,7 @@ def is_authenticated():
 
 
 def is_api_request():
-    return request.path.startswith('/collect') or request.path.startswith('/lookup-proino') or request.path.startswith('/item-detail') or request.path.startswith('/save-item') or request.path.startswith('/stats-items')
+    return request.path.startswith('/collect') or request.path.startswith('/lookup-proino') or request.path.startswith('/item-detail') or request.path.startswith('/save-item') or request.path.startswith('/stats-items') or request.path.startswith('/stats-item')
 
 
 @app.before_request
@@ -307,6 +307,207 @@ def fetch_stats_items(limit):
         conn.close()
 
 
+def search_stats_items(item_id, item_name, page, page_size):
+    if pymysql is None:
+        raise RuntimeError('pymysql 패키지가 설치되지 않았습니다. requirements 설치 후 다시 시도하세요.')
+
+    config = get_db_config()
+    missing = validate_db_config(config)
+    if missing:
+        missing_names = ', '.join(missing)
+        raise RuntimeError(f'DB 접속 환경변수가 누락되었습니다: {missing_names}')
+
+    safe_page = max(1, int(page or 1))
+    safe_page_size = max(1, min(int(page_size or 30), 100))
+    offset = (safe_page - 1) * safe_page_size
+
+    normalized_item_id = normalize_target(item_id)
+    normalized_item_name = str(item_name or '').strip()
+
+    where_clauses = []
+    params = []
+    if normalized_item_id:
+        where_clauses.append('it_id = %s')
+        params.append(normalized_item_id)
+    if normalized_item_name:
+        where_clauses.append('it_name LIKE %s')
+        params.append(f'%{normalized_item_name}%')
+
+    where_sql = f"WHERE {' AND '.join(where_clauses)}" if where_clauses else ''
+
+    conn = pymysql.connect(
+        host=config['host'],
+        port=config['port'],
+        user=config['user'],
+        password=config['password'],
+        database=config['database'],
+        charset='utf8mb4',
+        autocommit=True,
+        cursorclass=pymysql.cursors.DictCursor
+    )
+    try:
+        with conn.cursor() as cursor:
+            count_sql = f'SELECT COUNT(*) AS total_count FROM g5_shop_item {where_sql}'
+            cursor.execute(count_sql, tuple(params))
+            total_count = int((cursor.fetchone() or {}).get('total_count') or 0)
+
+            list_sql = f"""
+                SELECT
+                    it_id,
+                    it_name,
+                    it_seo_title,
+                    it_brand,
+                    it_model,
+                    it_basic,
+                    it_explan,
+                    it_price,
+                    it_stock_qty,
+                    it_shop_memo,
+                    it_sc_type,
+                    it_sc_price,
+                    it_1,
+                    it_time
+                FROM g5_shop_item
+                {where_sql}
+                ORDER BY it_time DESC, it_id DESC
+                LIMIT %s OFFSET %s
+            """
+            cursor.execute(list_sql, tuple(params + [safe_page_size, offset]))
+            items = cursor.fetchall()
+
+        total_pages = max(1, (total_count + safe_page_size - 1) // safe_page_size)
+        return {
+            'items': items,
+            'totalCount': total_count,
+            'page': safe_page,
+            'pageSize': safe_page_size,
+            'totalPages': total_pages,
+            'itemId': normalized_item_id,
+            'itemName': normalized_item_name
+        }
+    finally:
+        conn.close()
+
+
+def fetch_item_detail(item_id):
+    if pymysql is None:
+        raise RuntimeError('pymysql 패키지가 설치되지 않았습니다. requirements 설치 후 다시 시도하세요.')
+
+    config = get_db_config()
+    missing = validate_db_config(config)
+    if missing:
+        missing_names = ', '.join(missing)
+        raise RuntimeError(f'DB 접속 환경변수가 누락되었습니다: {missing_names}')
+
+    conn = pymysql.connect(
+        host=config['host'],
+        port=config['port'],
+        user=config['user'],
+        password=config['password'],
+        database=config['database'],
+        charset='utf8mb4',
+        autocommit=True,
+        cursorclass=pymysql.cursors.DictCursor
+    )
+    try:
+        with conn.cursor() as cursor:
+            cursor.execute('SELECT * FROM g5_shop_item WHERE it_id = %s LIMIT 1', (item_id,))
+            return cursor.fetchone()
+    finally:
+        conn.close()
+
+
+def update_item_detail(item_id, item_data):
+    if pymysql is None:
+        raise RuntimeError('pymysql 패키지가 설치되지 않았습니다. requirements 설치 후 다시 시도하세요.')
+
+    config = get_db_config()
+    missing = validate_db_config(config)
+    if missing:
+        missing_names = ', '.join(missing)
+        raise RuntimeError(f'DB 접속 환경변수가 누락되었습니다: {missing_names}')
+
+    normalized_id = normalize_target(item_id)
+    if not normalized_id:
+        raise RuntimeError('유효한 상품코드가 아닙니다.')
+
+    conn = pymysql.connect(
+        host=config['host'],
+        port=config['port'],
+        user=config['user'],
+        password=config['password'],
+        database=config['database'],
+        charset='utf8mb4',
+        autocommit=False,
+        cursorclass=pymysql.cursors.DictCursor
+    )
+    try:
+        with conn.cursor() as cursor:
+            cursor.execute('SELECT * FROM g5_shop_item WHERE it_id = %s LIMIT 1', (normalized_id,))
+            existing = cursor.fetchone()
+            if not existing:
+                return {'updated': False, 'affected': 0, 'notFound': True}
+
+            editable_columns = [column for column in existing.keys() if column != 'it_id']
+            updates = []
+            values = []
+            for column in editable_columns:
+                if column in item_data:
+                    updates.append(f'`{column}` = %s')
+                    values.append(item_data.get(column))
+
+            if not updates:
+                return {'updated': False, 'affected': 0, 'notFound': False}
+
+            values.append(normalized_id)
+            update_sql = f"UPDATE g5_shop_item SET {', '.join(updates)} WHERE it_id = %s"
+            affected = cursor.execute(update_sql, tuple(values))
+
+        conn.commit()
+        return {'updated': True, 'affected': affected, 'notFound': False}
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
+def delete_item_detail(item_id):
+    if pymysql is None:
+        raise RuntimeError('pymysql 패키지가 설치되지 않았습니다. requirements 설치 후 다시 시도하세요.')
+
+    config = get_db_config()
+    missing = validate_db_config(config)
+    if missing:
+        missing_names = ', '.join(missing)
+        raise RuntimeError(f'DB 접속 환경변수가 누락되었습니다: {missing_names}')
+
+    normalized_id = normalize_target(item_id)
+    if not normalized_id:
+        raise RuntimeError('유효한 상품코드가 아닙니다.')
+
+    conn = pymysql.connect(
+        host=config['host'],
+        port=config['port'],
+        user=config['user'],
+        password=config['password'],
+        database=config['database'],
+        charset='utf8mb4',
+        autocommit=False,
+        cursorclass=pymysql.cursors.Cursor
+    )
+    try:
+        with conn.cursor() as cursor:
+            affected = cursor.execute('DELETE FROM g5_shop_item WHERE it_id = %s', (normalized_id,))
+        conn.commit()
+        return affected
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
 @app.route('/health', methods=['GET'])
 def health():
     return jsonify({'status': 'ok', 'appState': 'running' if app_state['running'] else 'stopped'})
@@ -456,13 +657,64 @@ def save_item():
 
 @app.route('/stats-items', methods=['GET'])
 def stats_items():
-    limit = request.args.get('limit', '100')
+    item_id = request.args.get('itemId', '')
+    item_name = request.args.get('itemName', '')
+    page = request.args.get('page', '1')
+    page_size = request.args.get('pageSize', '30')
     try:
-        items = fetch_stats_items(limit)
+        result = search_stats_items(item_id, item_name, page, page_size)
     except Exception as exc:
         return jsonify({'success': False, 'message': '통계 목록 조회에 실패했습니다.', 'error': str(exc)}), 500
 
-    return jsonify({'success': True, 'count': len(items), 'items': items})
+    return jsonify({'success': True, **result})
+
+
+@app.route('/stats-item/<item_id>', methods=['GET'])
+def stats_item_detail(item_id):
+    normalized_id = normalize_target(item_id)
+    if not normalized_id:
+        return jsonify({'success': False, 'message': '유효한 상품코드가 아닙니다.'}), 400
+
+    try:
+        item = fetch_item_detail(normalized_id)
+    except Exception as exc:
+        return jsonify({'success': False, 'message': '상세 조회에 실패했습니다.', 'error': str(exc)}), 500
+
+    if not item:
+        return jsonify({'success': False, 'message': '대상 데이터가 없습니다.'}), 404
+
+    return jsonify({'success': True, 'item': item})
+
+
+@app.route('/stats-item/<item_id>', methods=['PUT'])
+def stats_item_update(item_id):
+    payload = request.get_json(silent=True) or {}
+    item_data = payload.get('item')
+    if not isinstance(item_data, dict):
+        return jsonify({'success': False, 'message': '수정 데이터 형식이 올바르지 않습니다.'}), 400
+
+    try:
+        result = update_item_detail(item_id, item_data)
+    except Exception as exc:
+        return jsonify({'success': False, 'message': '데이터 수정에 실패했습니다.', 'error': str(exc)}), 500
+
+    if result.get('notFound'):
+        return jsonify({'success': False, 'message': '수정 대상이 존재하지 않습니다.'}), 404
+
+    return jsonify({'success': True, 'message': '수정이 완료되었습니다.', 'affectedRows': result.get('affected', 0)})
+
+
+@app.route('/stats-item/<item_id>', methods=['DELETE'])
+def stats_item_delete(item_id):
+    try:
+        affected = delete_item_detail(item_id)
+    except Exception as exc:
+        return jsonify({'success': False, 'message': '삭제에 실패했습니다.', 'error': str(exc)}), 500
+
+    if affected == 0:
+        return jsonify({'success': False, 'message': '삭제 대상이 존재하지 않습니다.'}), 404
+
+    return jsonify({'success': True, 'message': '삭제가 완료되었습니다.', 'affectedRows': affected})
 
 
 if __name__ == '__main__':
