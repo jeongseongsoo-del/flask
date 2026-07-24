@@ -95,6 +95,34 @@
         return text ? escapeHtml(text) : '-';
       }
 
+      function sanitizeExplainHtml(rawHtml) {
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(String(rawHtml || ''), 'text/html');
+        doc.querySelectorAll('script, style, iframe, object, embed, form, input, button, select, textarea, noscript').forEach((element) => {
+          element.remove();
+        });
+
+        doc.querySelectorAll('*').forEach((element) => {
+          Array.from(element.attributes).forEach((attribute) => {
+            const attrName = attribute.name.toLowerCase();
+            const attrValue = String(attribute.value || '').trim().toLowerCase();
+            if (attrName.startsWith('on')) {
+              element.removeAttribute(attribute.name);
+              return;
+            }
+            if ((attrName === 'href' || attrName === 'src') && attrValue.startsWith('javascript:')) {
+              element.removeAttribute(attribute.name);
+              return;
+            }
+            if (attrName === 'style') {
+              element.removeAttribute(attribute.name);
+            }
+          });
+        });
+
+        return (doc.body?.innerHTML || '').trim();
+      }
+
       async function renderStatsPage() {
         pageContent.innerHTML = `
           <section class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
@@ -110,11 +138,80 @@
             </div>
             <div id="stats-content" class="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">목록을 불러오는 중...</div>
           </section>
+          <div id="stats-modal" class="fixed inset-0 z-50 hidden items-center justify-center bg-slate-900/60 p-4">
+            <div class="max-h-[88vh] w-full max-w-4xl overflow-hidden rounded-2xl bg-white shadow-2xl">
+              <div class="flex items-center justify-between border-b border-slate-200 px-4 py-3">
+                <h3 id="stats-modal-title" class="text-base font-semibold text-slate-900">상세 보기</h3>
+                <button id="stats-modal-close" type="button" class="rounded-lg border border-slate-200 px-3 py-1.5 text-xs text-slate-600 hover:bg-slate-100">닫기</button>
+              </div>
+              <div id="stats-modal-body" class="max-h-[74vh] overflow-auto p-4 text-sm text-slate-700"></div>
+            </div>
+          </div>
         `;
 
         const statsContent = document.getElementById('stats-content');
         const selectedCountLabel = document.getElementById('stats-selected-count');
         const refreshBtn = document.getElementById('stats-refresh-btn');
+        const statsModal = document.getElementById('stats-modal');
+        const statsModalTitle = document.getElementById('stats-modal-title');
+        const statsModalBody = document.getElementById('stats-modal-body');
+        const statsModalClose = document.getElementById('stats-modal-close');
+        let latestStatsRows = [];
+
+        const closeModal = () => {
+          statsModal?.classList.add('hidden');
+          statsModal?.classList.remove('flex');
+          if (statsModalBody) {
+            statsModalBody.innerHTML = '';
+          }
+        };
+
+        const openExplainModal = (row) => {
+          const rawExplain = String(row?.it_explan || '').trim();
+          const sanitizedHtml = sanitizeExplainHtml(rawExplain);
+          statsModalTitle.textContent = `it_explan 보기 - ${row?.it_id || '-'}`;
+          statsModalBody.innerHTML = sanitizedHtml || '<div class="text-slate-500">표시할 상세 HTML이 없습니다.</div>';
+          statsModal?.classList.remove('hidden');
+          statsModal?.classList.add('flex');
+        };
+
+        const openImageModal = (row) => {
+          const imageUrl = String(row?.it_1 || '').trim();
+          statsModalTitle.textContent = `it_1 이미지 보기 - ${row?.it_id || '-'}`;
+          statsModalBody.innerHTML = '';
+
+          if (!imageUrl) {
+            statsModalBody.innerHTML = '<div class="text-slate-500">이미지 URL이 없습니다.</div>';
+          } else {
+            const image = document.createElement('img');
+            image.src = imageUrl;
+            image.alt = '상품 이미지';
+            image.className = 'mx-auto max-h-[62vh] w-auto rounded-lg border border-slate-200 bg-white object-contain';
+
+            const urlLink = document.createElement('a');
+            urlLink.href = imageUrl;
+            urlLink.target = '_blank';
+            urlLink.rel = 'noreferrer noopener';
+            urlLink.className = 'mt-3 block break-all text-xs text-indigo-600 hover:underline';
+            urlLink.textContent = imageUrl;
+
+            statsModalBody.appendChild(image);
+            statsModalBody.appendChild(urlLink);
+          }
+
+          statsModal?.classList.remove('hidden');
+          statsModal?.classList.add('flex');
+        };
+
+        statsModalClose?.addEventListener('click', () => {
+          closeModal();
+        });
+
+        statsModal?.addEventListener('click', (event) => {
+          if (event.target === statsModal) {
+            closeModal();
+          }
+        });
 
         const loadStats = async () => {
           statsContent.textContent = '목록을 불러오는 중...';
@@ -126,13 +223,22 @@
             }
 
             const rows = Array.isArray(data.items) ? data.items : [];
+            latestStatsRows = rows;
             if (rows.length === 0) {
               statsContent.innerHTML = '<div class="text-slate-500">저장된 데이터가 없습니다.</div>';
               selectedCountLabel.textContent = '선택 0건';
               return;
             }
 
-            const bodyRows = rows.map((row) => `
+            const bodyRows = rows.map((row, rowIndex) => {
+              const explainLink = String(row?.it_explan || '').trim()
+                ? `<button type="button" class="stats-view-link text-indigo-600 hover:underline" data-view-type="explain" data-row-index="${rowIndex}">[보기]</button>`
+                : '-';
+              const imageLink = String(row?.it_1 || '').trim()
+                ? `<button type="button" class="stats-view-link text-indigo-600 hover:underline" data-view-type="image" data-row-index="${rowIndex}">[보기]</button>`
+                : '-';
+
+              return `
               <tr class="border-b border-slate-100 align-top">
                 <td class="px-3 py-2 text-center"><input type="checkbox" class="stats-row-checkbox h-4 w-4 rounded border-slate-300" data-item-id="${escapeHtml(row.it_id)}" /></td>
                 <td class="px-3 py-2 font-medium text-slate-800">${normalizeCell(row.it_id)}</td>
@@ -141,15 +247,16 @@
                 <td class="px-3 py-2">${normalizeCell(row.it_brand)}</td>
                 <td class="px-3 py-2">${normalizeCell(row.it_model)}</td>
                 <td class="px-3 py-2">${normalizeCell(row.it_basic)}</td>
-                <td class="px-3 py-2 max-w-[320px] whitespace-pre-wrap break-words">${normalizeCell(row.it_explan)}</td>
+                <td class="px-3 py-2 text-center">${explainLink}</td>
                 <td class="px-3 py-2 text-right">${normalizeCell(row.it_price)}</td>
                 <td class="px-3 py-2 text-right">${normalizeCell(row.it_stock_qty)}</td>
                 <td class="px-3 py-2">${normalizeCell(row.it_shop_memo)}</td>
                 <td class="px-3 py-2 text-center">${normalizeCell(row.it_sc_type)}</td>
                 <td class="px-3 py-2 text-right">${normalizeCell(row.it_sc_price)}</td>
-                <td class="px-3 py-2 max-w-[260px] break-all">${normalizeCell(row.it_1)}</td>
+                <td class="px-3 py-2 text-center">${imageLink}</td>
               </tr>
-            `).join('');
+            `;
+            }).join('');
 
             statsContent.innerHTML = `
               <div class="mb-2 text-xs text-slate-500">총 ${rows.length}건</div>
@@ -199,6 +306,24 @@
                   selectAll.checked = allChecked;
                 }
                 syncSelectedCount();
+              });
+            });
+
+            statsContent.querySelectorAll('.stats-view-link').forEach((linkElement) => {
+              linkElement.addEventListener('click', () => {
+                const rowIndex = Number.parseInt(linkElement.getAttribute('data-row-index') || '-1', 10);
+                if (!Number.isFinite(rowIndex) || rowIndex < 0 || rowIndex >= latestStatsRows.length) {
+                  return;
+                }
+                const row = latestStatsRows[rowIndex];
+                const viewType = linkElement.getAttribute('data-view-type');
+                if (viewType === 'explain') {
+                  openExplainModal(row);
+                  return;
+                }
+                if (viewType === 'image') {
+                  openImageModal(row);
+                }
               });
             });
 
