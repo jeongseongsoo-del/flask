@@ -365,10 +365,37 @@ def get_db_config():
     }
 
 
+def get_target_db_config():
+    host = os.environ.get('TARGET_MARIADB_HOST', 'voltworks.mycafe24.com').strip()
+    port = int(os.environ.get('TARGET_MARIADB_PORT', '3306').strip() or '3306')
+    database = os.environ.get('TARGET_MARIADB_DATABASE', 'voltworks').strip()
+    user = os.environ.get('TARGET_MARIADB_USER', 'voltworks').strip()
+    password = os.environ.get('TARGET_MARIADB_PASSWORD', '1111')
+    return {
+        'host': host,
+        'port': port,
+        'database': database,
+        'user': user,
+        'password': password
+    }
+
+
 def validate_db_config(config):
     required_keys = ('host', 'database', 'user', 'password')
     missing = [key for key in required_keys if not config.get(key)]
     return missing
+
+
+def normalize_selected_item_ids(item_ids):
+    normalized_ids = []
+    seen_ids = set()
+    for item_id in item_ids or []:
+        normalized_id = normalize_item_id_for_stats(item_id)
+        if not normalized_id or normalized_id in seen_ids:
+            continue
+        seen_ids.add(normalized_id)
+        normalized_ids.append(normalized_id)
+    return normalized_ids
 
 
 def execute_item_insert_sql(sql, item_id):
@@ -676,14 +703,7 @@ def delete_items_detail(item_ids):
         missing_names = ', '.join(missing)
         raise RuntimeError(f'DB 접속 환경변수가 누락되었습니다: {missing_names}')
 
-    normalized_ids = []
-    seen_ids = set()
-    for item_id in item_ids or []:
-        normalized_id = normalize_item_id_for_stats(item_id)
-        if not normalized_id or normalized_id in seen_ids:
-            continue
-        seen_ids.add(normalized_id)
-        normalized_ids.append(normalized_id)
+    normalized_ids = normalize_selected_item_ids(item_ids)
 
     if not normalized_ids:
         raise RuntimeError('삭제할 상품코드가 없습니다.')
@@ -709,6 +729,98 @@ def delete_items_detail(item_ids):
         raise
     finally:
         conn.close()
+
+
+def register_items_to_target_db(item_ids):
+    if pymysql is None:
+        raise RuntimeError('pymysql 패키지가 설치되지 않았습니다. requirements 설치 후 다시 시도하세요.')
+
+    normalized_ids = normalize_selected_item_ids(item_ids)
+    if not normalized_ids:
+        raise RuntimeError('전송할 상품코드가 없습니다.')
+
+    source_config = get_db_config()
+    source_missing = validate_db_config(source_config)
+    if source_missing:
+        missing_names = ', '.join(source_missing)
+        raise RuntimeError(f'원본 DB 접속 환경변수가 누락되었습니다: {missing_names}')
+
+    target_config = get_target_db_config()
+    target_missing = validate_db_config(target_config)
+    if target_missing:
+        missing_names = ', '.join(target_missing)
+        raise RuntimeError(f'대상 DB 접속정보가 누락되었습니다: {missing_names}')
+
+    source_conn = pymysql.connect(
+        host=source_config['host'],
+        port=source_config['port'],
+        user=source_config['user'],
+        password=source_config['password'],
+        database=source_config['database'],
+        charset='utf8mb4',
+        autocommit=True,
+        cursorclass=pymysql.cursors.DictCursor
+    )
+    target_conn = pymysql.connect(
+        host=target_config['host'],
+        port=target_config['port'],
+        user=target_config['user'],
+        password=target_config['password'],
+        database=target_config['database'],
+        charset='utf8mb4',
+        autocommit=False,
+        cursorclass=pymysql.cursors.Cursor
+    )
+
+    try:
+        placeholders = ', '.join(['%s'] * len(normalized_ids))
+        with source_conn.cursor() as source_cursor:
+            source_cursor.execute(f'SELECT * FROM g5_shop_item WHERE it_id IN ({placeholders})', tuple(normalized_ids))
+            source_rows = source_cursor.fetchall() or []
+
+        row_map = {str(row.get('it_id', '')): row for row in source_rows}
+        ordered_rows = [row_map[item_id] for item_id in normalized_ids if item_id in row_map]
+        missing_item_ids = [item_id for item_id in normalized_ids if item_id not in row_map]
+
+        if not ordered_rows:
+            return {
+                'requested': len(normalized_ids),
+                'transferred': 0,
+                'affected': 0,
+                'missing': len(missing_item_ids),
+                'missingItemIds': missing_item_ids
+            }
+
+        columns = list(ordered_rows[0].keys())
+        insert_columns = ', '.join([f'`{column}`' for column in columns])
+        values_placeholders = ', '.join(['%s'] * len(columns))
+        update_columns = [column for column in columns if column != 'it_id']
+        update_clause = ', '.join([f'`{column}` = VALUES(`{column}`)' for column in update_columns])
+        upsert_sql = (
+            f'INSERT INTO g5_shop_item ({insert_columns}) VALUES ({values_placeholders}) '
+            f'ON DUPLICATE KEY UPDATE {update_clause}'
+        )
+
+        affected_rows = 0
+        with target_conn.cursor() as target_cursor:
+            for row in ordered_rows:
+                values = [coerce_item_field_value(column, row.get(column)) for column in columns]
+                affected_rows += target_cursor.execute(upsert_sql, tuple(values))
+
+        target_conn.commit()
+        return {
+            'requested': len(normalized_ids),
+            'transferred': len(ordered_rows),
+            'affected': affected_rows,
+            'missing': len(missing_item_ids),
+            'missingItemIds': missing_item_ids
+        }
+    except Exception:
+        target_conn.rollback()
+        raise
+    finally:
+        source_conn.close()
+        target_conn.close()
 
 
 @app.route('/health', methods=['GET'])
@@ -945,6 +1057,30 @@ def stats_items_delete_selected():
         'affectedRows': result.get('affected', 0),
         'requested': result.get('requested', 0)
     })
+
+
+@app.route('/stats-items/register-selected', methods=['POST'])
+def stats_items_register_selected():
+    payload = request.get_json(silent=True) or {}
+    item_ids = payload.get('itemIds')
+    if not isinstance(item_ids, list):
+        return jsonify({'success': False, 'message': '전송할 상품코드 목록 형식이 올바르지 않습니다.'}), 400
+
+    try:
+        result = register_items_to_target_db(item_ids)
+    except ValueError as exc:
+        return jsonify({'success': False, 'message': str(exc)}), 400
+    except Exception as exc:
+        return jsonify({'success': False, 'message': '선택 상품 전송에 실패했습니다.', 'error': str(exc)}), 500
+
+    if result.get('transferred', 0) <= 0:
+        return jsonify({'success': False, 'message': '전송할 데이터가 없습니다.', **result}), 404
+
+    message = f'선택한 {result.get("transferred", 0)}건을 대상 DB로 전송했습니다.'
+    if result.get('missing', 0) > 0:
+        message += f' (원본 미존재 {result.get("missing", 0)}건)'
+
+    return jsonify({'success': True, 'message': message, **result})
 
 
 if __name__ == '__main__':

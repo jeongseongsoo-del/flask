@@ -601,14 +601,14 @@
 
         resultBox.innerHTML = `
           <div class="rounded-xl bg-emerald-50 p-3 text-emerald-700">상품정보가 자동 입력되었습니다.</div>
+          <div class="rounded-xl bg-slate-100 p-3">상품이미지 URL: ${collectionFields.productImageUrl.value || '-'}</div>
           <div class="rounded-xl bg-slate-100 p-3">생성 상품명: ${productNameWithBaseShipInfo}</div>
           <div class="rounded-xl bg-slate-100 p-3">브랜드: ${collectionFields.brand.value || '-'}</div>
           <div class="rounded-xl bg-slate-100 p-3">모델명: ${collectionFields.model.value || '-'}</div>
           <div class="rounded-xl bg-slate-100 p-3">규격: ${collectionFields.spec.value || '-'}</div>
           <div class="rounded-xl bg-slate-100 p-3">재고: ${collectionFields.stock.value || '0'}</div>
           <div class="rounded-xl bg-slate-100 p-3">기본출고수량/단위: ${(collectionFields.baseShipQty.value || '0')} ${collectionFields.shipUnit.value || ''}</div>
-          <div class="rounded-xl bg-slate-100 p-3">공급단가: ${collectionFields.supplyPrice.value || '0'}</div>
-          <div class="rounded-xl bg-slate-100 p-3">상품이미지 URL: ${collectionFields.productImageUrl.value || '-'}</div>
+          <div class="rounded-xl bg-slate-100 p-3">공급단가: ${collectionFields.supplyPrice.value || '0'}</div>          
         `;
 
         renderSqlPreview();
