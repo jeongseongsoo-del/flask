@@ -127,7 +127,7 @@ def is_authenticated():
 
 
 def is_api_request():
-    return request.path.startswith('/collect') or request.path.startswith('/lookup-proino') or request.path.startswith('/item-detail') or request.path.startswith('/save-item') or request.path.startswith('/stats-items') or request.path.startswith('/stats-item')
+    return request.path.startswith('/collect') or request.path.startswith('/lookup-proino') or request.path.startswith('/item-detail') or request.path.startswith('/save-item') or request.path.startswith('/stats-items') or request.path.startswith('/stats-item') or request.path.startswith('/channel-configs')
 
 
 @app.before_request
@@ -384,6 +384,302 @@ def validate_db_config(config):
     required_keys = ('host', 'database', 'user', 'password')
     missing = [key for key in required_keys if not config.get(key)]
     return missing
+
+
+CHANNEL_DEFAULTS = [
+    {'channel_code': 'ownmall', 'display_name': '자사몰', 'auth_type': 'db'},
+    {'channel_code': 'coupang', 'display_name': '쿠팡', 'auth_type': 'hmac'},
+    {'channel_code': 'naver_smartstore', 'display_name': '네이버스마트스토어', 'auth_type': 'oauth2'},
+    {'channel_code': 'cafe24', 'display_name': 'cafe24', 'auth_type': 'oauth2'},
+    {'channel_code': 'firstmall', 'display_name': '퍼스트몰', 'auth_type': 'api_key'},
+    {'channel_code': 'auction', 'display_name': '옥션', 'auth_type': 'oauth2'},
+    {'channel_code': 'gmarket', 'display_name': 'g마켓', 'auth_type': 'oauth2'},
+    {'channel_code': '11st', 'display_name': '11번가', 'auth_type': 'api_key'}
+]
+
+
+def mask_secret(value):
+    text = '' if value is None else str(value)
+    if not text:
+        return ''
+    if len(text) <= 6:
+        return '*' * len(text)
+    return f'{text[:3]}{"*" * (len(text) - 5)}{text[-2:]}'
+
+
+def ensure_channel_credentials_table(conn):
+    create_table_sql = """
+        CREATE TABLE IF NOT EXISTS g5_channel_credentials (
+            id BIGINT NOT NULL AUTO_INCREMENT,
+            channel_code VARCHAR(50) NOT NULL,
+            display_name VARCHAR(120) NOT NULL,
+            auth_type VARCHAR(30) NOT NULL DEFAULT 'api_key',
+            base_url VARCHAR(255) DEFAULT '',
+            shop_id VARCHAR(120) DEFAULT '',
+            client_id TEXT,
+            client_secret TEXT,
+            access_token TEXT,
+            refresh_token TEXT,
+            api_key TEXT,
+            api_secret TEXT,
+            extra_json TEXT,
+            is_enabled TINYINT(1) NOT NULL DEFAULT 1,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            PRIMARY KEY (id),
+            UNIQUE KEY uk_channel_code (channel_code)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    """
+
+    with conn.cursor() as cursor:
+        cursor.execute(create_table_sql)
+
+
+def normalize_channel_code(value):
+    code = str(value or '').strip().lower()
+    if not re.fullmatch(r'[a-z0-9_\-]{2,50}', code):
+        raise ValueError('채널코드 형식이 올바르지 않습니다.')
+    return code
+
+
+def to_channel_int_flag(value):
+    if isinstance(value, bool):
+        return 1 if value else 0
+    text = str(value or '').strip().lower()
+    if text in ('1', 'true', 'y', 'yes', 'on'):
+        return 1
+    return 0
+
+
+def normalize_channel_payload(payload, channel_code):
+    defaults = {
+        'display_name': channel_code,
+        'auth_type': 'api_key',
+        'base_url': '',
+        'shop_id': '',
+        'client_id': '',
+        'client_secret': '',
+        'access_token': '',
+        'refresh_token': '',
+        'api_key': '',
+        'api_secret': '',
+        'extra_json': '',
+        'is_enabled': 1
+    }
+    data = {}
+    source = payload if isinstance(payload, dict) else {}
+
+    for key, fallback in defaults.items():
+        value = source.get(key, fallback)
+        if key == 'is_enabled':
+            data[key] = to_channel_int_flag(value)
+            continue
+        if key == 'extra_json' and isinstance(value, dict):
+            data[key] = json.dumps(value, ensure_ascii=False)
+            continue
+        data[key] = '' if value is None else str(value).strip()
+
+    if len(data['display_name']) > 120:
+        raise ValueError('display_name 길이는 최대 120자입니다.')
+    if len(data['auth_type']) > 30:
+        raise ValueError('auth_type 길이는 최대 30자입니다.')
+    if len(data['base_url']) > 255:
+        raise ValueError('base_url 길이는 최대 255자입니다.')
+    if len(data['shop_id']) > 120:
+        raise ValueError('shop_id 길이는 최대 120자입니다.')
+
+    data['channel_code'] = channel_code
+    return data
+
+
+def fetch_channel_configs(include_secrets=False):
+    if pymysql is None:
+        raise RuntimeError('pymysql 패키지가 설치되지 않았습니다. requirements 설치 후 다시 시도하세요.')
+
+    config = get_db_config()
+    missing = validate_db_config(config)
+    if missing:
+        missing_names = ', '.join(missing)
+        raise RuntimeError(f'DB 접속 환경변수가 누락되었습니다: {missing_names}')
+
+    conn = pymysql.connect(
+        host=config['host'],
+        port=config['port'],
+        user=config['user'],
+        password=config['password'],
+        database=config['database'],
+        charset='utf8mb4',
+        autocommit=True,
+        cursorclass=pymysql.cursors.DictCursor
+    )
+    try:
+        ensure_channel_credentials_table(conn)
+        with conn.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT
+                    channel_code,
+                    display_name,
+                    auth_type,
+                    base_url,
+                    shop_id,
+                    client_id,
+                    client_secret,
+                    access_token,
+                    refresh_token,
+                    api_key,
+                    api_secret,
+                    extra_json,
+                    is_enabled,
+                    created_at,
+                    updated_at
+                FROM g5_channel_credentials
+                ORDER BY channel_code ASC
+                """
+            )
+            rows = cursor.fetchall() or []
+    finally:
+        conn.close()
+
+    result = []
+    for row in rows:
+        item = serialize_db_row(row)
+        item['is_enabled'] = bool(item.get('is_enabled'))
+        if include_secrets:
+            result.append(item)
+            continue
+        item['client_id_masked'] = mask_secret(item.get('client_id'))
+        item['client_secret_masked'] = mask_secret(item.get('client_secret'))
+        item['access_token_masked'] = mask_secret(item.get('access_token'))
+        item['refresh_token_masked'] = mask_secret(item.get('refresh_token'))
+        item['api_key_masked'] = mask_secret(item.get('api_key'))
+        item['api_secret_masked'] = mask_secret(item.get('api_secret'))
+        item.pop('client_id', None)
+        item.pop('client_secret', None)
+        item.pop('access_token', None)
+        item.pop('refresh_token', None)
+        item.pop('api_key', None)
+        item.pop('api_secret', None)
+        result.append(item)
+
+    return result
+
+
+def upsert_channel_config(channel_code, payload):
+    if pymysql is None:
+        raise RuntimeError('pymysql 패키지가 설치되지 않았습니다. requirements 설치 후 다시 시도하세요.')
+
+    normalized_code = normalize_channel_code(channel_code)
+    normalized_data = normalize_channel_payload(payload, normalized_code)
+
+    config = get_db_config()
+    missing = validate_db_config(config)
+    if missing:
+        missing_names = ', '.join(missing)
+        raise RuntimeError(f'DB 접속 환경변수가 누락되었습니다: {missing_names}')
+
+    conn = pymysql.connect(
+        host=config['host'],
+        port=config['port'],
+        user=config['user'],
+        password=config['password'],
+        database=config['database'],
+        charset='utf8mb4',
+        autocommit=False,
+        cursorclass=pymysql.cursors.Cursor
+    )
+    try:
+        ensure_channel_credentials_table(conn)
+        with conn.cursor() as cursor:
+            cursor.execute(
+                """
+                INSERT INTO g5_channel_credentials (
+                    channel_code, display_name, auth_type, base_url, shop_id,
+                    client_id, client_secret, access_token, refresh_token,
+                    api_key, api_secret, extra_json, is_enabled
+                ) VALUES (
+                    %s, %s, %s, %s, %s,
+                    %s, %s, %s, %s,
+                    %s, %s, %s, %s
+                )
+                ON DUPLICATE KEY UPDATE
+                    display_name = VALUES(display_name),
+                    auth_type = VALUES(auth_type),
+                    base_url = VALUES(base_url),
+                    shop_id = VALUES(shop_id),
+                    client_id = COALESCE(NULLIF(VALUES(client_id), ''), client_id),
+                    client_secret = COALESCE(NULLIF(VALUES(client_secret), ''), client_secret),
+                    access_token = COALESCE(NULLIF(VALUES(access_token), ''), access_token),
+                    refresh_token = COALESCE(NULLIF(VALUES(refresh_token), ''), refresh_token),
+                    api_key = COALESCE(NULLIF(VALUES(api_key), ''), api_key),
+                    api_secret = COALESCE(NULLIF(VALUES(api_secret), ''), api_secret),
+                    extra_json = VALUES(extra_json),
+                    is_enabled = VALUES(is_enabled)
+                """,
+                (
+                    normalized_data['channel_code'],
+                    normalized_data['display_name'],
+                    normalized_data['auth_type'],
+                    normalized_data['base_url'],
+                    normalized_data['shop_id'],
+                    normalized_data['client_id'],
+                    normalized_data['client_secret'],
+                    normalized_data['access_token'],
+                    normalized_data['refresh_token'],
+                    normalized_data['api_key'],
+                    normalized_data['api_secret'],
+                    normalized_data['extra_json'],
+                    normalized_data['is_enabled']
+                )
+            )
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
+def initialize_channel_configs():
+    if pymysql is None:
+        raise RuntimeError('pymysql 패키지가 설치되지 않았습니다. requirements 설치 후 다시 시도하세요.')
+
+    config = get_db_config()
+    missing = validate_db_config(config)
+    if missing:
+        missing_names = ', '.join(missing)
+        raise RuntimeError(f'DB 접속 환경변수가 누락되었습니다: {missing_names}')
+
+    conn = pymysql.connect(
+        host=config['host'],
+        port=config['port'],
+        user=config['user'],
+        password=config['password'],
+        database=config['database'],
+        charset='utf8mb4',
+        autocommit=False,
+        cursorclass=pymysql.cursors.Cursor
+    )
+    try:
+        ensure_channel_credentials_table(conn)
+        with conn.cursor() as cursor:
+            for channel in CHANNEL_DEFAULTS:
+                cursor.execute(
+                    """
+                    INSERT INTO g5_channel_credentials (channel_code, display_name, auth_type, is_enabled)
+                    VALUES (%s, %s, %s, 0)
+                    ON DUPLICATE KEY UPDATE
+                        display_name = VALUES(display_name),
+                        auth_type = COALESCE(NULLIF(auth_type, ''), VALUES(auth_type))
+                    """,
+                    (channel['channel_code'], channel['display_name'], channel['auth_type'])
+                )
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
 
 
 def normalize_selected_item_ids(item_ids):
@@ -861,6 +1157,11 @@ def serve_page():
     return send_from_directory(os.path.dirname(__file__), 'ctx-single-collection.html')
 
 
+@app.route('/channel-configs.html')
+def serve_channel_configs_page():
+    return send_from_directory(os.path.dirname(__file__), 'channel-configs.html')
+
+
 @app.route('/collect', methods=['POST'])
 def collect():
     data = request.get_json(silent=True) or {}
@@ -1081,6 +1382,44 @@ def stats_items_register_selected():
         message += f' (원본 미존재 {result.get("missing", 0)}건)'
 
     return jsonify({'success': True, 'message': message, **result})
+
+
+@app.route('/channel-configs/init', methods=['POST'])
+def channel_configs_init():
+    try:
+        initialize_channel_configs()
+    except Exception as exc:
+        return jsonify({'success': False, 'message': '채널 설정 초기화에 실패했습니다.', 'error': str(exc)}), 500
+
+    return jsonify({'success': True, 'message': '채널 설정 테이블 초기화가 완료되었습니다.'})
+
+
+@app.route('/channel-configs', methods=['GET'])
+def channel_configs_list():
+    include_secrets = str(request.args.get('includeSecrets', '')).strip().lower() in ('1', 'true', 'y', 'yes')
+    try:
+        rows = fetch_channel_configs(include_secrets=include_secrets)
+    except Exception as exc:
+        return jsonify({'success': False, 'message': '채널 설정 목록 조회에 실패했습니다.', 'error': str(exc)}), 500
+
+    return jsonify({'success': True, 'items': rows})
+
+
+@app.route('/channel-configs/<channel_code>', methods=['PUT'])
+def channel_configs_upsert(channel_code):
+    payload = request.get_json(silent=True) or {}
+    item = payload.get('item') if isinstance(payload.get('item'), dict) else payload
+
+    try:
+        upsert_channel_config(channel_code, item)
+        rows = fetch_channel_configs(include_secrets=False)
+    except ValueError as exc:
+        return jsonify({'success': False, 'message': str(exc)}), 400
+    except Exception as exc:
+        return jsonify({'success': False, 'message': '채널 설정 저장에 실패했습니다.', 'error': str(exc)}), 500
+
+    matched = next((row for row in rows if row.get('channel_code') == channel_code.lower()), None)
+    return jsonify({'success': True, 'message': '채널 설정이 저장되었습니다.', 'item': matched})
 
 
 if __name__ == '__main__':
