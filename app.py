@@ -365,21 +365,6 @@ def get_db_config():
     }
 
 
-def get_target_db_config():
-    host = os.environ.get('TARGET_MARIADB_HOST', 'voltworks.mycafe24.com').strip()
-    port = int(os.environ.get('TARGET_MARIADB_PORT', '3306').strip() or '3306')
-    database = os.environ.get('TARGET_MARIADB_DATABASE', 'voltworks').strip()
-    user = os.environ.get('TARGET_MARIADB_USER', 'voltworks').strip()
-    password = os.environ.get('TARGET_MARIADB_PASSWORD', '1111')
-    return {
-        'host': host,
-        'port': port,
-        'database': database,
-        'user': user,
-        'password': password
-    }
-
-
 def validate_db_config(config):
     required_keys = ('host', 'database', 'user', 'password')
     missing = [key for key in required_keys if not config.get(key)]
