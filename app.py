@@ -2,7 +2,6 @@ from flask import Flask, jsonify, request, Response, send_from_directory, sessio
 from flask_cors import CORS
 from urllib.parse import quote
 from urllib.request import Request, urlopen
-from functools import wraps
 from datetime import datetime
 from decimal import Decimal
 import json
@@ -784,57 +783,6 @@ def execute_item_insert_sql(sql, item_id):
     except Exception:
         conn.rollback()
         raise
-    finally:
-        conn.close()
-
-
-def fetch_stats_items(limit):
-    if pymysql is None:
-        raise RuntimeError('pymysql 패키지가 설치되지 않았습니다. requirements 설치 후 다시 시도하세요.')
-
-    config = get_db_config()
-    missing = validate_db_config(config)
-    if missing:
-        missing_names = ', '.join(missing)
-        raise RuntimeError(f'DB 접속 환경변수가 누락되었습니다: {missing_names}')
-
-    safe_limit = max(1, min(int(limit), 500))
-    conn = pymysql.connect(
-        host=config['host'],
-        port=config['port'],
-        user=config['user'],
-        password=config['password'],
-        database=config['database'],
-        charset='utf8mb4',
-        autocommit=True,
-        cursorclass=pymysql.cursors.DictCursor
-    )
-    try:
-        with conn.cursor() as cursor:
-            cursor.execute(
-                """
-                SELECT
-                    it_id,
-                    it_name,
-                    it_seo_title,
-                    it_brand,
-                    it_model,
-                    it_basic,
-                    it_explan,
-                    it_price,
-                    it_stock_qty,
-                    it_shop_memo,
-                    it_sc_type,
-                    it_sc_price,
-                    it_1,
-                    it_time
-                FROM g5_shop_item
-                ORDER BY it_time DESC, it_id DESC
-                LIMIT %s
-                """,
-                (safe_limit,)
-            )
-            return cursor.fetchall()
     finally:
         conn.close()
 
