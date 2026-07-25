@@ -104,6 +104,46 @@
           </div>
         </div>
       </div>
+
+      <section class="mt-6 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+        <h2 class="mb-2 text-sm font-semibold text-slate-800">입력 시 주의사항</h2>
+        <div class="space-y-2 text-xs leading-6 text-slate-700">
+          <details open class="rounded-lg border border-slate-200 bg-white p-3">
+            <summary class="cursor-pointer font-semibold text-slate-800">공통 입력 규칙</summary>
+            <ul class="mt-2 list-disc space-y-1 pl-5">
+              <li>채널코드는 영문 소문자, 숫자, 언더스코어/하이픈만 사용하세요.</li>
+              <li>비밀값(client_secret, token, api_key 등)은 목록에서 마스킹됩니다.</li>
+              <li>비밀값 입력칸을 비우고 저장하면 기존값을 유지합니다.</li>
+              <li>채널을 실제 전송에 사용하려면 채널 사용 체크 후 저장하세요.</li>
+            </ul>
+          </details>
+
+          <details class="rounded-lg border border-amber-200 bg-amber-50 p-3">
+            <summary class="cursor-pointer font-semibold text-amber-900">자사몰(ownmall)</summary>
+            <ul class="mt-2 list-disc space-y-1 pl-5 text-amber-900">
+              <li>[내가 상품등록] 전송은 ownmall의 extra_json 원격 MariaDB 정보로 연결됩니다.</li>
+              <li>필수 키: db_host, db_port, db_database, db_user, db_password</li>
+              <li>형식 오류 또는 누락 시 전송이 실패합니다.</li>
+            </ul>
+          </details>
+
+          <details class="rounded-lg border border-slate-200 bg-white p-3">
+            <summary class="cursor-pointer font-semibold text-slate-800">쿠팡 / 네이버 / 11번가</summary>
+            <ul class="mt-2 list-disc space-y-1 pl-5">
+              <li>토큰 만료가 잦으므로 access_token, refresh_token을 최신 값으로 유지하세요.</li>
+              <li>인증 실패 발생 시 client_id, client_secret, api_key, api_secret 값을 먼저 확인하세요.</li>
+            </ul>
+          </details>
+
+          <details class="rounded-lg border border-slate-200 bg-white p-3">
+            <summary class="cursor-pointer font-semibold text-slate-800">cafe24 / 퍼스트몰 / 옥션 / g마켓</summary>
+            <ul class="mt-2 list-disc space-y-1 pl-5">
+              <li>auth_type과 base_url을 실제 운영 API 문서 기준으로 맞춰주세요.</li>
+              <li>shop_id(mall_id) 값이 다른 환경으로 입력되면 전송이 실패할 수 있습니다.</li>
+            </ul>
+          </details>
+        </div>
+      </section>
     </section>
 
     <script>
