@@ -529,6 +529,10 @@
                 ? `<button type="button" class="stats-view-link text-indigo-600 hover:underline" data-view-type="explain" data-row-index="${rowIndex}">[보기]</button>`
                 : '-';
               const itemIdLink = `<button type="button" class="stats-item-detail-link font-semibold text-indigo-600 hover:underline" data-item-id="${escapeHtml(row.it_id)}">${normalizeCell(row.it_id)}</button>`;
+              const imageSrc = String(row?.it_1 || '').trim();
+              const imageCell = imageSrc
+                ? `<img src="${escapeHtml(imageSrc)}" alt="상품 이미지" class="h-20 w-20 rounded-md border border-slate-200 bg-white object-contain" />`
+                : '-';
 
               return `
               <tr class="border-b border-slate-100 align-top">
@@ -536,13 +540,13 @@
                 <td class="px-3 py-2 font-medium text-slate-800">${itemIdLink}</td>
                 <td class="px-3 py-2">${normalizeCell(row.it_name)}</td>
                 <td class="px-3 py-2">${normalizeCell(row.it_brand)}</td>
-                <td class="px-3 py-2">${normalizeCell(row.it_explan)}</td>
+                <td class="px-3 py-2 text-center">${explainLink}</td>
                 <td class="px-3 py-2 text-right">${normalizeCell(row.it_price)}</td>
                 <td class="px-3 py-2 text-right">${normalizeCell(row.it_stock_qty)}</td>
                 <td class="px-3 py-2">${normalizeCell(row.it_shop_memo)}</td>
                 <td class="px-3 py-2 text-center">${normalizeCell(row.it_sc_type)}</td>
                 <td class="px-3 py-2 text-right">${normalizeCell(row.it_sc_price)}</td>
-                <td class="px-3 py-2">${normalizeCell(row.it_1)}</td>
+                <td class="px-3 py-2">${imageCell}</td>
                 <td class="px-3 py-2">${normalizeCell(row.it_time)}</td>
               </tr>
             `;
@@ -561,7 +565,7 @@
                       <th class="px-3 py-2 text-left text-white">it_id</th>
                       <th class="px-3 py-2 text-left text-white">it_name</th>
                       <th class="px-3 py-2 text-left text-white">it_brand</th>
-                      <th class="px-3 py-2 text-left text-white">it_explan</th>
+                      <th class="px-3 py-2 text-center text-white">it_explan</th>
                       <th class="px-3 py-2 text-right text-white">it_price</th>
                       <th class="px-3 py-2 text-right text-white">it_stock_qty</th>
                       <th class="px-3 py-2 text-left text-white">it_shop_memo</th>
