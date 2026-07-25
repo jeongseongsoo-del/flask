@@ -386,6 +386,22 @@ def validate_db_config(config):
     return missing
 
 
+def parse_json_object_text(raw_text, field_name='extra_json'):
+    text = '' if raw_text is None else str(raw_text).strip()
+    if not text:
+        return {}
+
+    try:
+        parsed = json.loads(text)
+    except json.JSONDecodeError as exc:
+        raise ValueError(f'{field_name} JSON 형식이 올바르지 않습니다: {exc.msg}') from exc
+
+    if not isinstance(parsed, dict):
+        raise ValueError(f'{field_name} 값은 JSON 객체여야 합니다.')
+
+    return parsed
+
+
 CHANNEL_DEFAULTS = [
     {'channel_code': 'ownmall', 'display_name': '자사몰', 'auth_type': 'db'},
     {'channel_code': 'coupang', 'display_name': '쿠팡', 'auth_type': 'hmac'},
@@ -565,12 +581,60 @@ def fetch_channel_configs(include_secrets=False):
     return result
 
 
+def fetch_channel_config(channel_code, include_secrets=False):
+    normalized_code = normalize_channel_code(channel_code)
+    rows = fetch_channel_configs(include_secrets=include_secrets)
+    return next((item for item in rows if item.get('channel_code') == normalized_code), None)
+
+
+def get_ownmall_target_db_config():
+    ownmall_config = fetch_channel_config('ownmall', include_secrets=True)
+    if not ownmall_config:
+        raise RuntimeError('ownmall 채널 설정이 없습니다. 채널설정 페이지에서 테이블 초기화 후 설정을 저장하세요.')
+
+    if not bool(ownmall_config.get('is_enabled')):
+        raise RuntimeError('ownmall 채널이 비활성화 상태입니다. 채널설정에서 사용 체크 후 저장하세요.')
+
+    extra = parse_json_object_text(ownmall_config.get('extra_json', ''), 'ownmall.extra_json')
+
+    db_host = str(extra.get('db_host') or extra.get('host') or '').strip()
+    db_port_raw = extra.get('db_port', extra.get('port', 3306))
+    db_database = str(extra.get('db_database') or extra.get('database') or '').strip()
+    db_user = str(extra.get('db_user') or extra.get('user') or '').strip()
+    db_password = '' if extra.get('db_password') is None else str(extra.get('db_password'))
+
+    try:
+        db_port = int(str(db_port_raw).strip() or '3306')
+    except Exception as exc:
+        raise RuntimeError('ownmall.extra_json의 db_port(또는 port) 값이 올바르지 않습니다.') from exc
+
+    target_config = {
+        'host': db_host,
+        'port': db_port,
+        'database': db_database,
+        'user': db_user,
+        'password': db_password
+    }
+    missing = validate_db_config(target_config)
+    if missing:
+        missing_names = ', '.join(missing)
+        raise RuntimeError(
+            f'ownmall DB 접속정보가 누락되었습니다: {missing_names}. '
+            '채널설정 > ownmall 의 extra_json에 db_host, db_port, db_database, db_user, db_password를 입력하세요.'
+        )
+
+    return target_config
+
+
 def upsert_channel_config(channel_code, payload):
     if pymysql is None:
         raise RuntimeError('pymysql 패키지가 설치되지 않았습니다. requirements 설치 후 다시 시도하세요.')
 
     normalized_code = normalize_channel_code(channel_code)
     normalized_data = normalize_channel_payload(payload, normalized_code)
+
+    if normalized_data.get('extra_json'):
+        parse_json_object_text(normalized_data.get('extra_json'), f'{normalized_code}.extra_json')
 
     config = get_db_config()
     missing = validate_db_config(config)
@@ -1041,11 +1105,7 @@ def register_items_to_target_db(item_ids):
         missing_names = ', '.join(source_missing)
         raise RuntimeError(f'원본 DB 접속 환경변수가 누락되었습니다: {missing_names}')
 
-    target_config = get_target_db_config()
-    target_missing = validate_db_config(target_config)
-    if target_missing:
-        missing_names = ', '.join(target_missing)
-        raise RuntimeError(f'대상 DB 접속정보가 누락되었습니다: {missing_names}')
+    target_config = get_ownmall_target_db_config()
 
     source_conn = pymysql.connect(
         host=source_config['host'],
