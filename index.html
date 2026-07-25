@@ -32,7 +32,7 @@
           <div class="flex flex-col gap-2" id="sidebar-menu">
             <a href="#" data-page="dashboard" class="menu-link rounded-xl bg-indigo-50 px-3 py-2 font-semibold text-indigo-600">대시보드</a>
             <a href="#" data-page="ctx" class="menu-link rounded-xl px-3 py-2 text-slate-700 transition hover:bg-slate-100">CTX 단건수집</a>
-            <a href="#" data-page="stats" class="menu-link rounded-xl px-3 py-2 text-slate-700 transition hover:bg-slate-100">통계</a>
+            <a href="#" data-page="stats" class="menu-link rounded-xl px-3 py-2 text-slate-700 transition hover:bg-slate-100">관리</a>
             <a href="#" data-page="alerts" class="menu-link rounded-xl px-3 py-2 text-slate-700 transition hover:bg-slate-100">알림</a>
             <a href="#" data-page="help" class="menu-link rounded-xl px-3 py-2 text-slate-700 transition hover:bg-slate-100">도움말</a>
           </div>
@@ -528,9 +528,6 @@
               const explainLink = String(row?.it_explan || '').trim()
                 ? `<button type="button" class="stats-view-link text-indigo-600 hover:underline" data-view-type="explain" data-row-index="${rowIndex}">[보기]</button>`
                 : '-';
-              const imageLink = String(row?.it_1 || '').trim()
-                ? `<button type="button" class="stats-view-link text-indigo-600 hover:underline" data-view-type="image" data-row-index="${rowIndex}">[보기]</button>`
-                : '-';
               const itemIdLink = `<button type="button" class="stats-item-detail-link font-semibold text-indigo-600 hover:underline" data-item-id="${escapeHtml(row.it_id)}">${normalizeCell(row.it_id)}</button>`;
 
               return `
@@ -538,17 +535,15 @@
                 <td class="px-3 py-2 text-center"><input type="checkbox" class="stats-row-checkbox h-4 w-4 rounded border-slate-300" data-item-id="${escapeHtml(row.it_id)}" /></td>
                 <td class="px-3 py-2 font-medium text-slate-800">${itemIdLink}</td>
                 <td class="px-3 py-2">${normalizeCell(row.it_name)}</td>
-                <td class="px-3 py-2">${normalizeCell(row.it_seo_title)}</td>
                 <td class="px-3 py-2">${normalizeCell(row.it_brand)}</td>
-                <td class="px-3 py-2">${normalizeCell(row.it_model)}</td>
-                <td class="px-3 py-2">${normalizeCell(row.it_basic)}</td>
-                <td class="px-3 py-2 text-center">${explainLink}</td>
+                <td class="px-3 py-2">${normalizeCell(row.it_explan)}</td>
                 <td class="px-3 py-2 text-right">${normalizeCell(row.it_price)}</td>
                 <td class="px-3 py-2 text-right">${normalizeCell(row.it_stock_qty)}</td>
                 <td class="px-3 py-2">${normalizeCell(row.it_shop_memo)}</td>
                 <td class="px-3 py-2 text-center">${normalizeCell(row.it_sc_type)}</td>
                 <td class="px-3 py-2 text-right">${normalizeCell(row.it_sc_price)}</td>
-                <td class="px-3 py-2 text-center">${imageLink}</td>
+                <td class="px-3 py-2">${normalizeCell(row.it_1)}</td>
+                <td class="px-3 py-2">${normalizeCell(row.it_time)}</td>
               </tr>
             `;
             }).join('');
@@ -559,23 +554,21 @@
                 <div id="stats-table-scroll-width" class="h-4"></div>
               </div>
               <div id="stats-table-scroll-body" class="overflow-x-auto overflow-y-auto rounded-xl border border-slate-200 bg-white">
-                <table class="min-w-[1800px] whitespace-nowrap text-xs leading-5 text-slate-700">
-                  <thead class="sticky top-0 bg-slate-100 text-slate-600">
+                <table class="min-w-[1600px] whitespace-nowrap text-xs leading-5 text-slate-700">
+                  <thead class="sticky top-0 z-20 bg-slate-900 text-white shadow-sm">
                     <tr>
-                      <th class="px-3 py-2 text-center"><input type="checkbox" id="stats-select-all" class="h-4 w-4 rounded border-slate-300" /></th>
-                      <th class="px-3 py-2 text-left">it_id</th>
-                      <th class="px-3 py-2 text-left">it_name</th>
-                      <th class="px-3 py-2 text-left">it_seo_title</th>
-                      <th class="px-3 py-2 text-left">it_brand</th>
-                      <th class="px-3 py-2 text-left">it_model</th>
-                      <th class="px-3 py-2 text-left">it_basic</th>
-                      <th class="px-3 py-2 text-left">it_explan</th>
-                      <th class="px-3 py-2 text-right">it_price</th>
-                      <th class="px-3 py-2 text-right">it_stock_qty</th>
-                      <th class="px-3 py-2 text-left">it_shop_memo</th>
-                      <th class="px-3 py-2 text-center">it_sc_type</th>
-                      <th class="px-3 py-2 text-right">it_sc_price</th>
-                      <th class="px-3 py-2 text-left">it_1</th>
+                      <th class="px-3 py-2 text-center text-white"><input type="checkbox" id="stats-select-all" class="h-4 w-4 rounded border-slate-300" /></th>
+                      <th class="px-3 py-2 text-left text-white">it_id</th>
+                      <th class="px-3 py-2 text-left text-white">it_name</th>
+                      <th class="px-3 py-2 text-left text-white">it_brand</th>
+                      <th class="px-3 py-2 text-left text-white">it_explan</th>
+                      <th class="px-3 py-2 text-right text-white">it_price</th>
+                      <th class="px-3 py-2 text-right text-white">it_stock_qty</th>
+                      <th class="px-3 py-2 text-left text-white">it_shop_memo</th>
+                      <th class="px-3 py-2 text-center text-white">it_sc_type</th>
+                      <th class="px-3 py-2 text-right text-white">it_sc_price</th>
+                      <th class="px-3 py-2 text-left text-white">it_1</th>
+                      <th class="px-3 py-2 text-left text-white">it_time</th>
                     </tr>
                   </thead>
                   <tbody>${bodyRows}</tbody>

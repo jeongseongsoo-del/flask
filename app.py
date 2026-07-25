@@ -515,10 +515,7 @@ def search_stats_items(item_id, item_name, page, page_size):
                 SELECT
                     it_id,
                     it_name,
-                    it_seo_title,
                     it_brand,
-                    it_model,
-                    it_basic,
                     it_explan,
                     it_price,
                     it_stock_qty,
