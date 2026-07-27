@@ -867,11 +867,12 @@ def upsert_item_register_status(config, rows, shop_name='nega'):
         with conn.cursor() as cursor:
             tracked = 0
             for row in rows:
-                # Canonical key for status tracking is itemCd (#sym:itemCd), stored in it_shop_memo.
-                it_id = normalize_item_id_for_stats(row.get('it_shop_memo')) or normalize_item_id_for_stats(row.get('it_id'))
-                if not it_id:
+                # Save status rows with canonical 7-digit product code.
+                product_code = normalize_target(row.get('it_shop_memo')) or normalize_target(row.get('it_id'))
+                if len(product_code) != 7:
                     continue
-                item_code = normalize_item_id_for_stats(row.get('it_shop_memo')) or it_id
+                it_id = product_code
+                item_code = product_code
                 product_name = str(row.get('it_name') or '').strip()
                 supply_price = _to_decimal_or_zero(row.get('it_cust_price'))
                 base_ship_unit = _extract_base_ship_unit(row)
@@ -1431,8 +1432,8 @@ def save_item():
     if not sql:
         return jsonify({'success': False, 'message': '저장할 SQL이 없습니다.'}), 400
 
-    if not item_id:
-        return jsonify({'success': False, 'message': '상품코드(itemId)가 올바르지 않습니다.'}), 400
+    if len(item_id) != 7:
+        return jsonify({'success': False, 'message': '상품코드(itemId)는 숫자 7자리만 허용됩니다.'}), 400
 
     normalized = re.sub(r'\s+', ' ', sql).strip().lower()
     if not normalized.startswith('insert into `g5_shop_item`') and not normalized.startswith('insert into g5_shop_item'):
