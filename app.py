@@ -1195,40 +1195,64 @@ def register_items_to_target_db(item_ids):
                 'transferred': 0,
                 'affected': 0,
                 'missing': len(missing_item_ids),
-                'missingItemIds': missing_item_ids
+                'missingItemIds': missing_item_ids,
+                'duplicates': 0,
+                'duplicateItemIds': []
             }
 
-        columns = list(ordered_rows[0].keys())
+        with target_conn.cursor() as target_cursor:
+            target_cursor.execute(
+                f'SELECT it_id FROM g5_shop_item WHERE it_id IN ({placeholders})',
+                tuple(normalized_ids)
+            )
+            existing_rows = target_cursor.fetchall() or []
+
+        existing_item_ids = {str(row[0]) for row in existing_rows}
+        duplicate_item_ids = [item_id for item_id in normalized_ids if item_id in existing_item_ids]
+        insert_rows = [row for row in ordered_rows if str(row.get('it_id', '')) not in existing_item_ids]
+
+        if not insert_rows:
+            return {
+                'requested': len(normalized_ids),
+                'transferred': 0,
+                'affected': 0,
+                'missing': len(missing_item_ids),
+                'missingItemIds': missing_item_ids,
+                'duplicates': len(duplicate_item_ids),
+                'duplicateItemIds': duplicate_item_ids,
+                'trackingUpdated': True,
+                'tracked': 0,
+                'trackingError': ''
+            }
+
+        columns = list(insert_rows[0].keys())
         insert_columns = ', '.join([f'`{column}`' for column in columns])
         values_placeholders = ', '.join(['%s'] * len(columns))
-        update_columns = [column for column in columns if column != 'it_id']
-        update_clause = ', '.join([f'`{column}` = VALUES(`{column}`)' for column in update_columns])
-        upsert_sql = (
-            f'INSERT INTO g5_shop_item ({insert_columns}) VALUES ({values_placeholders}) '
-            f'ON DUPLICATE KEY UPDATE {update_clause}'
-        )
+        insert_sql = f'INSERT INTO g5_shop_item ({insert_columns}) VALUES ({values_placeholders})'
 
         affected_rows = 0
         with target_conn.cursor() as target_cursor:
-            for row in ordered_rows:
+            for row in insert_rows:
                 values = [coerce_item_field_value(column, row.get(column)) for column in columns]
-                affected_rows += target_cursor.execute(upsert_sql, tuple(values))
+                affected_rows += target_cursor.execute(insert_sql, tuple(values))
 
         target_conn.commit()
 
         tracking_error = ''
         tracking_result = {'tracked': 0}
         try:
-            tracking_result = upsert_item_register_status(source_config, ordered_rows)
+            tracking_result = upsert_item_register_status(source_config, insert_rows)
         except Exception as exc:
             tracking_error = str(exc)
 
         return {
             'requested': len(normalized_ids),
-            'transferred': len(ordered_rows),
+            'transferred': len(insert_rows),
             'affected': affected_rows,
             'missing': len(missing_item_ids),
             'missingItemIds': missing_item_ids,
+            'duplicates': len(duplicate_item_ids),
+            'duplicateItemIds': duplicate_item_ids,
             'trackingUpdated': bool(not tracking_error),
             'tracked': int(tracking_result.get('tracked', 0) or 0),
             'trackingError': tracking_error
@@ -1497,11 +1521,19 @@ def stats_items_register_selected():
         return jsonify({'success': False, 'message': '선택 상품 전송에 실패했습니다.', 'error': str(exc)}), 500
 
     if result.get('transferred', 0) <= 0:
+        if result.get('duplicates', 0) > 0:
+            return jsonify({
+                'success': True,
+                'message': f'중복 it_id {result.get("duplicates", 0)}건은 제외되어 신규 등록이 없습니다.',
+                **result
+            })
         return jsonify({'success': False, 'message': '전송할 데이터가 없습니다.', **result}), 404
 
     message = f'선택한 {result.get("transferred", 0)}건을 대상 DB로 전송했습니다.'
     if result.get('missing', 0) > 0:
         message += f' (원본 미존재 {result.get("missing", 0)}건)'
+    if result.get('duplicates', 0) > 0:
+        message += f' (중복 it_id 제외 {result.get("duplicates", 0)}건)'
     if not result.get('trackingUpdated', True):
         message += ' (관리 상태 업데이트 실패)'
     elif result.get('tracked', 0) > 0:
