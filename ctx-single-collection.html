@@ -373,7 +373,8 @@
         }
 
         const item = latestLookupData?.payload?.result?.items?.find((entry) => !!entry) || {};
-        const itemCd = sanitizeProductCode(latestLookupData.proino || latestLookupData.target || targetInput.value || '');
+        const itemCd = sanitizeProductCode(targetInput.value || latestLookupData.target || latestLookupData.proino || '');
+        const targetCode = sanitizeProductCode(targetInput.value || latestLookupData.target || '');
         if (!itemCd) {
           return '';
         }
@@ -487,7 +488,7 @@
             it_sum_qty: 0,
             it_use_cnt: 0,
             it_use_avg: 0.0,
-            it_shop_memo: itemCd,
+            it_shop_memo: targetCode,
             ec_mall_pid: '',
             it_img1: imageUrl,
             it_img2: '',
@@ -700,7 +701,7 @@
       function renderCleanDetailPreview(html) {
         const sanitized = sanitizeDetailHtml(html);
         latestCleanDetailHtml = sanitized || '';
-        const itemCd = sanitizeProductCode(latestLookupData?.proino || latestLookupData?.target || targetInput.value || '');
+        const itemCd = sanitizeProductCode(targetInput.value || latestLookupData?.target || latestLookupData?.proino || '');
         const item = latestLookupData?.payload?.result?.items?.find((entry) => !!entry) || {};
         const explainContent = itemCd ? buildExplainContentHtml(itemCd, item, latestMetaInfoText, sanitized) : '';
         cleanDetailPreview.innerHTML = explainContent || '<div class="text-slate-500">정리할 상세 HTML이 없습니다.</div>';
@@ -899,7 +900,7 @@
 
       saveDbBtn?.addEventListener('click', async () => {
         const sql = buildItemInsertSql();
-        const itemId = sanitizeProductCode(latestLookupData?.proino || latestLookupData?.target || targetInput.value || '');
+        const itemId = sanitizeProductCode(targetInput.value || latestLookupData?.target || latestLookupData?.proino || '');
         if (!sql) {
           resultBox.innerHTML = '<div class="rounded-xl bg-amber-50 p-3 text-amber-700">저장할 SQL이 아직 생성되지 않았습니다.</div>';
           return;
