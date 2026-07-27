@@ -435,6 +435,29 @@ def ensure_channel_credentials_table(conn):
         cursor.execute(create_table_sql)
 
 
+def ensure_item_register_status_table(conn):
+    create_table_sql = """
+        CREATE TABLE IF NOT EXISTS g5_item_register_status (
+            id BIGINT NOT NULL AUTO_INCREMENT,
+            it_id VARCHAR(20) NOT NULL,
+            item_code VARCHAR(20) NOT NULL,
+            supply_price DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+            base_ship_unit VARCHAR(80) NOT NULL DEFAULT '',
+            stock_qty INT NOT NULL DEFAULT 0,
+            status VARCHAR(20) NOT NULL DEFAULT 'registered',
+            registered_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            PRIMARY KEY (id),
+            UNIQUE KEY uk_it_id (it_id),
+            KEY idx_item_code (item_code),
+            KEY idx_registered_at (registered_at)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    """
+
+    with conn.cursor() as cursor:
+        cursor.execute(create_table_sql)
+
+
 def normalize_channel_code(value):
     code = str(value or '').strip().lower()
     if not re.fullmatch(r'[a-z0-9_\-]{2,50}', code):
@@ -740,6 +763,101 @@ def normalize_selected_item_ids(item_ids):
         seen_ids.add(normalized_id)
         normalized_ids.append(normalized_id)
     return normalized_ids
+
+
+def _to_int_or_zero(value):
+    text = '' if value is None else str(value).strip()
+    if text == '':
+        return 0
+    try:
+        return int(float(text.replace(',', '')))
+    except Exception:
+        return 0
+
+
+def _to_decimal_or_zero(value):
+    text = '' if value is None else str(value).strip()
+    if text == '':
+        return Decimal('0.00')
+    try:
+        return Decimal(text.replace(',', '')).quantize(Decimal('0.01'))
+    except Exception:
+        return Decimal('0.00')
+
+
+def _extract_base_ship_unit(row):
+    explain_html = str((row or {}).get('it_explan') or '')
+    explain_match = re.search(r'출고수량\(주문단위\)</span>\s*:\s*([^<\n\r]+)', explain_html)
+    if explain_match:
+        return explain_match.group(1).strip()
+
+    item_name = str((row or {}).get('it_name') or '').strip()
+    match = re.search(r'/\s*([0-9]+(?:\.[0-9]+)?)\s*/\s*([^\s/]+)\s*$', item_name)
+    if not match:
+        return ''
+    qty = match.group(1).strip()
+    unit = match.group(2).strip()
+    return f'{qty}/{unit}'.strip('/')
+
+
+def upsert_item_register_status(config, rows):
+    if not rows:
+        return {'tracked': 0}
+
+    conn = pymysql.connect(
+        host=config['host'],
+        port=config['port'],
+        user=config['user'],
+        password=config['password'],
+        database=config['database'],
+        charset='utf8mb4',
+        autocommit=False,
+        cursorclass=pymysql.cursors.Cursor
+    )
+    try:
+        ensure_item_register_status_table(conn)
+        upsert_sql = """
+            INSERT INTO g5_item_register_status (
+                it_id,
+                item_code,
+                supply_price,
+                base_ship_unit,
+                stock_qty,
+                status,
+                registered_at
+            ) VALUES (%s, %s, %s, %s, %s, %s, NOW())
+            ON DUPLICATE KEY UPDATE
+                item_code = VALUES(item_code),
+                supply_price = VALUES(supply_price),
+                base_ship_unit = VALUES(base_ship_unit),
+                stock_qty = VALUES(stock_qty),
+                status = VALUES(status),
+                registered_at = VALUES(registered_at)
+        """
+
+        with conn.cursor() as cursor:
+            tracked = 0
+            for row in rows:
+                it_id = normalize_item_id_for_stats(row.get('it_id'))
+                if not it_id:
+                    continue
+                item_code = normalize_item_id_for_stats(row.get('it_shop_memo')) or it_id
+                supply_price = _to_decimal_or_zero(row.get('it_cust_price'))
+                base_ship_unit = _extract_base_ship_unit(row)
+                stock_qty = max(0, _to_int_or_zero(row.get('it_stock_qty')))
+                cursor.execute(
+                    upsert_sql,
+                    (it_id, item_code, supply_price, base_ship_unit, stock_qty, 'registered')
+                )
+                tracked += 1
+
+        conn.commit()
+        return {'tracked': tracked}
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
 
 
 def execute_item_insert_sql(sql, item_id):
@@ -1097,12 +1215,23 @@ def register_items_to_target_db(item_ids):
                 affected_rows += target_cursor.execute(upsert_sql, tuple(values))
 
         target_conn.commit()
+
+        tracking_error = ''
+        tracking_result = {'tracked': 0}
+        try:
+            tracking_result = upsert_item_register_status(source_config, ordered_rows)
+        except Exception as exc:
+            tracking_error = str(exc)
+
         return {
             'requested': len(normalized_ids),
             'transferred': len(ordered_rows),
             'affected': affected_rows,
             'missing': len(missing_item_ids),
-            'missingItemIds': missing_item_ids
+            'missingItemIds': missing_item_ids,
+            'trackingUpdated': bool(not tracking_error),
+            'tracked': int(tracking_result.get('tracked', 0) or 0),
+            'trackingError': tracking_error
         }
     except Exception:
         target_conn.rollback()
@@ -1373,6 +1502,10 @@ def stats_items_register_selected():
     message = f'선택한 {result.get("transferred", 0)}건을 대상 DB로 전송했습니다.'
     if result.get('missing', 0) > 0:
         message += f' (원본 미존재 {result.get("missing", 0)}건)'
+    if not result.get('trackingUpdated', True):
+        message += ' (관리 상태 업데이트 실패)'
+    elif result.get('tracked', 0) > 0:
+        message += f' (관리 상태 {result.get("tracked", 0)}건 업데이트)'
 
     return jsonify({'success': True, 'message': message, **result})
 
