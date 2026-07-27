@@ -441,6 +441,8 @@ def ensure_item_register_status_table(conn):
             id BIGINT NOT NULL AUTO_INCREMENT,
             it_id VARCHAR(20) NOT NULL,
             item_code VARCHAR(20) NOT NULL,
+            product_name VARCHAR(255) NOT NULL DEFAULT '',
+            shop_name VARCHAR(50) NOT NULL DEFAULT '',
             supply_price DECIMAL(12,2) NOT NULL DEFAULT 0.00,
             base_ship_unit VARCHAR(80) NOT NULL DEFAULT '',
             stock_qty INT NOT NULL DEFAULT 0,
@@ -456,6 +458,21 @@ def ensure_item_register_status_table(conn):
 
     with conn.cursor() as cursor:
         cursor.execute(create_table_sql)
+        cursor.execute(
+            """
+            SELECT COLUMN_NAME
+            FROM INFORMATION_SCHEMA.COLUMNS
+            WHERE TABLE_SCHEMA = DATABASE()
+              AND TABLE_NAME = 'g5_item_register_status'
+              AND COLUMN_NAME IN ('product_name', 'shop_name')
+            """
+        )
+        existing_columns = {str(row[0]) for row in (cursor.fetchall() or [])}
+
+        if 'product_name' not in existing_columns:
+            cursor.execute("ALTER TABLE g5_item_register_status ADD COLUMN product_name VARCHAR(255) NOT NULL DEFAULT '' AFTER item_code")
+        if 'shop_name' not in existing_columns:
+            cursor.execute("ALTER TABLE g5_item_register_status ADD COLUMN shop_name VARCHAR(50) NOT NULL DEFAULT '' AFTER product_name")
 
 
 def normalize_channel_code(value):
@@ -789,18 +806,18 @@ def _extract_base_ship_unit(row):
     explain_html = str((row or {}).get('it_explan') or '')
     explain_match = re.search(r'출고수량\(주문단위\)</span>\s*:\s*([^<\n\r]+)', explain_html)
     if explain_match:
-        return explain_match.group(1).strip()
+        qty_text = explain_match.group(1).strip()
+        return qty_text.split('/', 1)[0].strip()
 
     item_name = str((row or {}).get('it_name') or '').strip()
     match = re.search(r'/\s*([0-9]+(?:\.[0-9]+)?)\s*/\s*([^\s/]+)\s*$', item_name)
     if not match:
         return ''
     qty = match.group(1).strip()
-    unit = match.group(2).strip()
-    return f'{qty}/{unit}'.strip('/')
+    return qty
 
 
-def upsert_item_register_status(config, rows):
+def upsert_item_register_status(config, rows, shop_name='nega'):
     if not rows:
         return {'tracked': 0}
 
@@ -820,14 +837,18 @@ def upsert_item_register_status(config, rows):
             INSERT INTO g5_item_register_status (
                 it_id,
                 item_code,
+                product_name,
+                shop_name,
                 supply_price,
                 base_ship_unit,
                 stock_qty,
                 status,
                 registered_at
-            ) VALUES (%s, %s, %s, %s, %s, %s, NOW())
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, NOW())
             ON DUPLICATE KEY UPDATE
                 item_code = VALUES(item_code),
+                product_name = VALUES(product_name),
+                shop_name = VALUES(shop_name),
                 supply_price = VALUES(supply_price),
                 base_ship_unit = VALUES(base_ship_unit),
                 stock_qty = VALUES(stock_qty),
@@ -842,12 +863,13 @@ def upsert_item_register_status(config, rows):
                 if not it_id:
                     continue
                 item_code = normalize_item_id_for_stats(row.get('it_shop_memo')) or it_id
+                product_name = str(row.get('it_name') or '').strip()
                 supply_price = _to_decimal_or_zero(row.get('it_cust_price'))
                 base_ship_unit = _extract_base_ship_unit(row)
                 stock_qty = max(0, _to_int_or_zero(row.get('it_stock_qty')))
                 cursor.execute(
                     upsert_sql,
-                    (it_id, item_code, supply_price, base_ship_unit, stock_qty, 'registered')
+                    (it_id, item_code, product_name, str(shop_name or '').strip(), supply_price, base_ship_unit, stock_qty, 'registered')
                 )
                 tracked += 1
 
@@ -1241,7 +1263,7 @@ def register_items_to_target_db(item_ids):
         tracking_error = ''
         tracking_result = {'tracked': 0}
         try:
-            tracking_result = upsert_item_register_status(source_config, insert_rows)
+            tracking_result = upsert_item_register_status(source_config, insert_rows, shop_name='nega')
         except Exception as exc:
             tracking_error = str(exc)
 
