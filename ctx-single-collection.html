@@ -272,6 +272,14 @@
         return Number.isFinite(parsed) ? parsed : 0;
       }
 
+      function ceilToHundred(value) {
+        const numeric = Number(value);
+        if (!Number.isFinite(numeric)) {
+          return 0;
+        }
+        return Math.ceil(numeric / 100) * 100;
+      }
+
       function toSqlLiteral(value) {
         if (value === null || value === undefined) {
           return "''";
@@ -365,6 +373,7 @@
         if (impDelvServ === 'Y') {
           itPrice += shippingWithTax;
         }
+        itPrice = ceilToHundred(itPrice);
         const itScPrice = impDelvServ === 'Y' ? 0 : Math.round(shippingFee);
 
         const explainTopNotice = buildExplainTopNotice(itemCd, item);
