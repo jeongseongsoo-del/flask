@@ -3,7 +3,7 @@ from flask_cors import CORS
 from urllib.parse import quote
 from urllib.request import Request, urlopen
 from datetime import datetime
-from decimal import Decimal
+from decimal import Decimal, ROUND_UP
 import json
 import os
 import re
@@ -802,6 +802,14 @@ def _to_decimal_or_zero(value):
         return Decimal('0.00')
 
 
+def _calculate_register_cust_price(it_price):
+    # Rule for "내가 상품등록": it_cust_price = ceil((it_price * 1.1) / 100) * 100
+    safe_price = max(0, _to_int_or_zero(it_price))
+    raw_price = Decimal(safe_price) * Decimal('1.1')
+    hundred_units = (raw_price / Decimal('100')).quantize(Decimal('1'), rounding=ROUND_UP)
+    return int(hundred_units * Decimal('100'))
+
+
 def _extract_base_ship_unit(row):
     explain_html = str((row or {}).get('it_explan') or '')
     explain_match = re.search(r'출고수량\(주문단위\)</span>\s*:\s*([^<\n\r]+)', explain_html)
@@ -859,7 +867,8 @@ def upsert_item_register_status(config, rows, shop_name='nega'):
         with conn.cursor() as cursor:
             tracked = 0
             for row in rows:
-                it_id = normalize_item_id_for_stats(row.get('it_id'))
+                # Canonical key for status tracking is itemCd (#sym:itemCd), stored in it_shop_memo.
+                it_id = normalize_item_id_for_stats(row.get('it_shop_memo')) or normalize_item_id_for_stats(row.get('it_id'))
                 if not it_id:
                     continue
                 item_code = normalize_item_id_for_stats(row.get('it_shop_memo')) or it_id
@@ -1255,6 +1264,7 @@ def register_items_to_target_db(item_ids):
         affected_rows = 0
         with target_conn.cursor() as target_cursor:
             for row in insert_rows:
+                row['it_cust_price'] = _calculate_register_cust_price(row.get('it_price'))
                 values = [coerce_item_field_value(column, row.get(column)) for column in columns]
                 affected_rows += target_cursor.execute(insert_sql, tuple(values))
 
