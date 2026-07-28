@@ -620,10 +620,10 @@
 
             statsContent.innerHTML = `
               <div class="mb-2 text-xs text-slate-500">현재 페이지 ${rows.length}건</div>
-              <div id="stats-table-scroll-top" class="sticky top-16 z-10 mb-2 overflow-x-auto overflow-y-hidden rounded-lg border border-slate-200 bg-white/95 shadow-sm backdrop-blur">
-                <div id="stats-table-scroll-width" class="h-4"></div>
-              </div>
-              <div id="stats-table-scroll-body" class="overflow-x-auto overflow-y-auto rounded-xl border border-slate-200 bg-white">
+              <div id="stats-table-scroll-top" class="sticky top-16 z-10 mb-2 overflow-x-auto overflow-y-visible rounded-lg border border-slate-200 bg-white/95 shadow-sm backdrop-blur">
+                <div id="stats-table-scroll-width" class="h-6"></div>
+              </div>              
+              <div id="stats-table-scroll-body" class="overflow-x-auto overflow-y-auto rounded-xl border border-slate-200 bg-white max-h-[60vh]">
                 <table class="min-w-[1600px] whitespace-nowrap text-xs leading-5 text-slate-700">
                   <thead class="sticky top-0 z-20 bg-slate-900 text-white shadow-sm">
                     <tr>
@@ -802,6 +802,33 @@
           pageContent.innerHTML = `
             <section class="rounded-3xl border border-slate-200 bg-white p-3 shadow-sm">
               <iframe src="channel-configs.html" class="min-h-[760px] w-full rounded-2xl border-0"></iframe>
+            </section>
+          `;
+          return;
+        }
+
+        if (pageKey === 'help') {
+          pageContent.innerHTML = `
+            <section class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+              <div class="mb-6">
+                <p class="text-sm font-medium text-indigo-600">GitHub 동기화 가이드</p>
+                <h1 class="text-2xl font-semibold text-slate-900">도움말</h1>
+              </div>
+
+              <div class="rounded-2xl border border-slate-200 bg-slate-50 p-5">
+                <ol class="list-decimal space-y-2 pl-5 text-sm leading-7 text-slate-700">
+                  <li>작업 파일 변경 후 아래 명령어를 순서대로 실행하세요.</li>
+                  <li>충돌이 발생하면 충돌 해결 후 다시 commit, push를 진행하세요.</li>
+                </ol>
+
+                <div class="mt-4 rounded-xl border border-slate-200 bg-white p-4">
+                  <p class="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">PowerShell 명령어</p>
+                  <p class="font-mono text-xs text-slate-700">git add .</p>
+                  <p class="font-mono text-xs text-slate-700">git commit -m "update: dashboard changes"</p>
+                  <p class="font-mono text-xs text-slate-700">git pull --rebase origin main</p>
+                  <p class="font-mono text-xs text-slate-700">git push origin main</p>
+                </div>
+              </div>
             </section>
           `;
           return;
