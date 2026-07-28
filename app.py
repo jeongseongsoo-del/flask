@@ -1323,22 +1323,30 @@ def stop_app():
 
 @app.route('/')
 def index():
-    return send_from_directory(os.path.dirname(__file__), 'index.html')
+    return send_html_file('index.html')
 
 
 @app.route('/index.html')
 def serve_index():
-    return send_from_directory(os.path.dirname(__file__), 'index.html')
+    return send_html_file('index.html')
 
 
 @app.route('/ctx-single-collection.html')
 def serve_page():
-    return send_from_directory(os.path.dirname(__file__), 'ctx-single-collection.html')
+    return send_html_file('ctx-single-collection.html')
 
 
 @app.route('/channel-configs.html')
 def serve_channel_configs_page():
-    return send_from_directory(os.path.dirname(__file__), 'channel-configs.html')
+    return send_html_file('channel-configs.html')
+
+
+def send_html_file(filename):
+    response = send_from_directory(os.path.dirname(__file__), filename, max_age=0)
+    response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
+    response.headers['Pragma'] = 'no-cache'
+    response.headers['Expires'] = '0'
+    return response
 
 
 @app.route('/collect', methods=['POST'])
