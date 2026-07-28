@@ -381,7 +381,8 @@
 
         const item = latestLookupData?.payload?.result?.items?.find((entry) => !!entry) || {};
         const targetCode = sanitizeProductCode(targetInput.value || latestLookupData.target || '');
-        const itemCd = targetCode;
+        const managementNoCode = sanitizeProductCode(collectionFields.managementNo.value || latestLookupData.proino || '');
+        const itemCd = managementNoCode;
         if (itemCd.length !== 7) {
           return '';
         }
@@ -412,7 +413,7 @@
         itPrice = ceilToHundred(itPrice);
         const itScPrice = impDelvServ === 'Y' ? 0 : Math.round(shippingFee);
 
-        const explainTopNotice = buildExplainTopNotice(itemCd, item);
+        const explainTopNotice = buildExplainTopNotice(targetCode || itemCd, item);
 
         const metaHtml = latestMetaInfoText
           ? `<pre>${escapeHtml(latestMetaInfoText)}</pre>`
@@ -907,13 +908,19 @@
 
       saveDbBtn?.addEventListener('click', async () => {
         const sql = buildItemInsertSql();
-        const itemId = sanitizeProductCode(targetInput.value || latestLookupData?.target || '');
+        const itemId = sanitizeProductCode(collectionFields.managementNo.value || latestLookupData?.proino || '');
+        const productCode = sanitizeProductCode(targetInput.value || latestLookupData?.target || '');
         if (!sql) {
           resultBox.innerHTML = '<div class="rounded-xl bg-amber-50 p-3 text-amber-700">저장할 SQL이 아직 생성되지 않았습니다.</div>';
           return;
         }
 
         if (itemId.length !== 7) {
+          resultBox.innerHTML = '<div class="rounded-xl bg-amber-50 p-3 text-amber-700">관리번호(it_id)는 숫자 7자리만 허용됩니다.</div>';
+          return;
+        }
+
+        if (productCode.length !== 7) {
           resultBox.innerHTML = '<div class="rounded-xl bg-amber-50 p-3 text-amber-700">상품코드는 숫자 7자리만 허용됩니다.</div>';
           return;
         }
