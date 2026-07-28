@@ -1,0 +1,112 @@
+{  
+  "sellerProductName": "",
+  "vendorId": "",
+  "saleStartedAt": "",
+  "saleEndedAt": "2099-01-01T23:59:59",
+  "displayProductName": "",
+  "brand": "",
+  "generalProductName": "",
+  "productGroup": "",
+  "deliveryMethod": "SEQUENCIAL",
+  "deliveryCompanyCode": "CJGLS",
+  "deliveryChargeType": "NOT_FREE",
+  "deliveryCharge": 3500,
+  "freeShipOverAmount": 260000,
+  "deliveryChargeOnReturn": 5000,
+  "remoteAreaDeliverable": "N",
+  "unionDeliveryType": "UNION_DELIVERY",
+  "returnCenterCode": "NO_RETURN_CENTERCODE",
+  "returnChargeName": "반품지",
+  "companyContactNumber": "063-262-2539",
+  "returnZipCode": "553-821",
+  "returnAddress": "전라북도특별자치도 완주군 고산면 고산천로 203-7 NEGA",
+  "returnAddressDetail": "333",
+  "returnCharge": 5000,
+  "outboundShippingPlaceCode": "16551910",
+  "vendorUserId": "negatec",
+  "requested": true,
+  "items": [
+    {
+      "itemName": "",
+      "originalPrice": 0,
+      "salePrice": 0,
+      "maximumBuyCount": "100",
+      "maximumBuyForPerson": "0",
+      "outboundShippingTimeDay": "1",
+      "maximumBuyForPersonPeriod": "1",
+      "unitCount": 0,
+      "adultOnly": "EVERYONE",
+      "taxType": "TAX",
+      "parallelImported": "NOT_PARALLEL_IMPORTED",
+      "overseasPurchased": "NOT_OVERSEAS_PURCHASED",
+      "pccNeeded": "false",
+      "externalVendorSku": "",
+      "barcode": "",
+      "emptyBarcode": true,
+      "emptyBarcodeReason": "자체구분시스템",
+      "modelNo": "",
+      "certifications": [
+        {
+          "certificationType": "NOT_REQUIRED",
+          "certificationCode": ""
+        }
+      ],
+      "searchTags": [
+      ],
+      "images": [
+        {
+          "imageOrder": 0,
+          "imageType": "REPRESENTATION",
+          "vendorPath": ""
+        }
+      ],
+      "notices": [
+            {
+              "noticeCategoryName": "기타 재화",
+              "noticeCategoryDetailName": "품명 및 모델명",
+              "content": "상세페이지 참조"
+            },
+            {
+              "noticeCategoryName": "기타 재화",
+              "noticeCategoryDetailName": "제조국(원산지)",
+              "content": "상품 상세페이지 참조"
+            },
+            {
+              "noticeCategoryName": "기타 재화",
+              "noticeCategoryDetailName": "소비자상담 관련 전화번호",
+              "content": "상세페이지 참조"
+            }
+          ],
+      "attributes": [
+        {
+          "attributeTypeName": "모델명/품번",
+          "attributeValueName": ""
+        },
+        {
+          "attributeTypeName": "수량",
+          "attributeValueName": "1개"
+        }
+      ],
+      "contents": [
+        {
+          "contentsType": "HTML",
+          "contentDetails": [
+            {
+              "content": "",
+              "detailType": "TEXT"
+            }
+          ]
+        }
+      ],
+      "offerCondition": "NEW",
+      "offerDescription": ""
+    }
+  ],
+  "requiredDocuments": [
+  ],
+  "extraInfoMessage": "",
+  "manufacture": "",
+  "bundleInfo": {
+    "bundleType": ""
+  }
+}

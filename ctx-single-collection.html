@@ -84,6 +84,12 @@
               <label for="field-product-name" class="mb-1 block text-sm font-medium text-slate-700">상품명</label>
               <input id="field-product-name" type="text" class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100" />
             </div>
+
+            <div>
+              <label for="field-management-no" class="mb-1 block text-sm font-medium text-slate-700">관리번호</label>
+              <input id="field-management-no" type="text" class="w-full rounded-xl border border-slate-300 bg-slate-100 px-3 py-2 text-sm text-slate-600 outline-none" readonly placeholder="itemcd 값이 자동 입력됩니다." />
+            </div>
+            
             <div>
               <label for="field-brand" class="mb-1 block text-sm font-medium text-slate-700">브랜드</label>
               <input id="field-brand" type="text" class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100" />
@@ -177,6 +183,7 @@
 
       const collectionFields = {
         productName: document.getElementById('field-product-name'),
+        managementNo: document.getElementById('field-management-no'),
         brand: document.getElementById('field-brand'),
         model: document.getElementById('field-model'),
         spec: document.getElementById('field-spec'),
@@ -1015,6 +1022,10 @@
           }
 
           latestLookupData = data;
+          const collectedItemCd = String(data?.proino || data?.target || target || '').trim();
+          if (collectionFields.managementNo) {
+            collectionFields.managementNo.value = collectedItemCd;
+          }
 
           resultBox.innerHTML = `
             <div class="rounded-xl bg-emerald-50 p-3 text-emerald-700">${data.message}</div>
