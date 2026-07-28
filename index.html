@@ -620,11 +620,9 @@
 
             statsContent.innerHTML = `
               <div class="mb-2 text-xs text-slate-500">현재 페이지 ${rows.length}건</div>
-              <div id="stats-table-scroll-top" class="sticky top-16 z-10 mb-2 overflow-x-auto overflow-y-visible rounded-lg border border-slate-200 bg-white/95 shadow-sm backdrop-blur">
-                <div id="stats-table-scroll-width" class="h-6"></div>
-              </div>              
-              <div id="stats-table-scroll-body" class="overflow-x-auto overflow-y-auto rounded-xl border border-slate-200 bg-white max-h-[60vh]">
-                <table class="min-w-[1600px] whitespace-nowrap text-xs leading-5 text-slate-700">
+              <div id="stats-table-scroll-x" class="overflow-x-auto rounded-xl border border-slate-200 bg-white">
+                <div id="stats-table-scroll-y" class="overflow-y-auto max-h-[60vh]">
+                  <table class="min-w-[1600px] whitespace-nowrap text-xs leading-5 text-slate-700">
                   <thead class="sticky top-0 z-20 bg-slate-900 text-white shadow-sm">
                     <tr>
                       <th class="px-3 py-2 text-center text-white"><input type="checkbox" id="stats-select-all" class="h-4 w-4 rounded border-slate-300" /></th>
@@ -641,39 +639,11 @@
                       <th class="px-3 py-2 text-left text-white">it_time</th>
                     </tr>
                   </thead>
-                  <tbody>${bodyRows}</tbody>
-                </table>
+                    <tbody>${bodyRows}</tbody>
+                  </table>
+                </div>
               </div>
             `;
-
-            const topScroll = document.getElementById('stats-table-scroll-top');
-            const bodyScroll = document.getElementById('stats-table-scroll-body');
-            const widthProxy = document.getElementById('stats-table-scroll-width');
-            const tableElement = bodyScroll?.querySelector('table');
-
-            if (topScroll && bodyScroll && widthProxy && tableElement) {
-              widthProxy.style.width = `${tableElement.scrollWidth}px`;
-              let syncingFromTop = false;
-              let syncingFromBody = false;
-
-              topScroll.addEventListener('scroll', () => {
-                if (syncingFromBody) {
-                  return;
-                }
-                syncingFromTop = true;
-                bodyScroll.scrollLeft = topScroll.scrollLeft;
-                syncingFromTop = false;
-              });
-
-              bodyScroll.addEventListener('scroll', () => {
-                if (syncingFromTop) {
-                  return;
-                }
-                syncingFromBody = true;
-                topScroll.scrollLeft = bodyScroll.scrollLeft;
-                syncingFromBody = false;
-              });
-            }
 
             const selectAll = document.getElementById('stats-select-all');
             activeRowCheckboxes = Array.from(document.querySelectorAll('.stats-row-checkbox'));
