@@ -1,4 +1,4 @@
-from flask import Flask, jsonify, request, Response, render_template, send_from_directory, session, redirect
+from flask import Flask, jsonify, request, Response, render_template, session, redirect
 from flask_cors import CORS
 from urllib.parse import quote
 from urllib.request import Request, urlopen
@@ -1339,14 +1339,6 @@ def serve_page():
 @app.route('/channel-configs.html')
 def serve_channel_configs_page():
     return render_template('pages/channel-configs/index.html')
-
-
-def send_html_file(filename):
-    response = send_from_directory(os.path.dirname(__file__), filename, max_age=0)
-    response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
-    response.headers['Pragma'] = 'no-cache'
-    response.headers['Expires'] = '0'
-    return response
 
 
 @app.route('/collect', methods=['POST'])
