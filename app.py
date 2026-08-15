@@ -1,4 +1,4 @@
-from flask import Flask, jsonify, request, Response, render_template, session, redirect
+from flask import Flask, jsonify, request, Response, session, redirect
 from flask_cors import CORS
 from urllib.parse import quote
 from urllib.request import Request, urlopen
@@ -10,6 +10,8 @@ import re
 import threading
 import time
 
+from routes.pages import pages_bp
+
 try:
     import pymysql
 except Exception:
@@ -19,6 +21,7 @@ app = Flask(__name__)
 CORS(app)
 app.config['JSON_SORT_KEYS'] = False
 app.secret_key = os.environ.get('FLASK_SECRET_KEY', 'change-this-secret-key')
+app.register_blueprint(pages_bp)
 app_state = {
     'running': True
 }
@@ -1319,26 +1322,6 @@ def stop_app():
 
     threading.Thread(target=shutdown_process, daemon=True).start()
     return jsonify({'success': True, 'message': '앱이 중단되었습니다.', 'appState': 'stopped'})
-
-
-@app.route('/')
-def index():
-    return render_template('pages/dashboard/index.html')
-
-
-@app.route('/index.html')
-def serve_index():
-    return render_template('pages/dashboard/index.html')
-
-
-@app.route('/ctx-single-collection.html')
-def serve_page():
-    return render_template('pages/ctx/single-collection.html')
-
-
-@app.route('/channel-configs.html')
-def serve_channel_configs_page():
-    return render_template('pages/channel-configs/index.html')
 
 
 @app.route('/collect', methods=['POST'])
