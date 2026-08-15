@@ -1,4 +1,4 @@
-from flask import Flask, jsonify, request, Response, send_from_directory, session, redirect
+from flask import Flask, jsonify, request, Response, render_template, send_from_directory, session, redirect
 from flask_cors import CORS
 from urllib.parse import quote
 from urllib.request import Request, urlopen
@@ -1323,22 +1323,22 @@ def stop_app():
 
 @app.route('/')
 def index():
-    return send_html_file('index.html')
+    return render_template('pages/dashboard/index.html')
 
 
 @app.route('/index.html')
 def serve_index():
-    return send_html_file('index.html')
+    return render_template('pages/dashboard/index.html')
 
 
 @app.route('/ctx-single-collection.html')
 def serve_page():
-    return send_html_file('ctx-single-collection.html')
+    return render_template('pages/ctx/single-collection.html')
 
 
 @app.route('/channel-configs.html')
 def serve_channel_configs_page():
-    return send_html_file('channel-configs.html')
+    return render_template('pages/channel-configs/index.html')
 
 
 def send_html_file(filename):
