@@ -390,6 +390,7 @@
         const productName = String(collectionFields.productName.value || '').trim();
         const brandName = String(collectionFields.brand.value || '').trim();
         const modelName = String(collectionFields.model.value || '').trim();
+        const itSkin = 'basic';
         const seoTitle = buildCombinedTitle(productName, modelName);
         const basicText = seoTitle || productName;
         const stockQty = Math.max(0, toIntegerValue(collectionFields.stock.value));
@@ -442,7 +443,7 @@
             ca_id: '99',
             ca_id2: '',
             ca_id3: '',
-            it_skin: 'basic',
+            it_skin: itSkin,
             it_mobile_skin: '',
             it_name: productName,
             it_seo_title: seoTitle,
