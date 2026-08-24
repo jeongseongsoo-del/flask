@@ -10,6 +10,7 @@ import os
 import re
 import threading
 import time
+import uuid
 
 from routes.auth import auth_bp
 from routes.collect import collect_bp, normalize_target
@@ -1148,8 +1149,8 @@ def register_items_to_11st(item_ids, disp_ctgr_no):
     if not normalized_ids:
         raise RuntimeError('전송할 상품코드가 없습니다.')
 
-    # Cap per-request batch size so worst-case (all timeouts) stays well under any reverse-proxy gateway timeout.
-    max_batch_size = 3
+    # Cap per-request batch size to keep each background job reasonably sized.
+    max_batch_size = 20
     if len(normalized_ids) > max_batch_size:
         raise RuntimeError(f'한 번에 최대 {max_batch_size}건까지만 전송할 수 있습니다. 선택 항목을 나눠서 다시 시도하세요.')
 
@@ -1200,8 +1201,9 @@ def register_items_to_11st(item_ids, disp_ctgr_no):
     row_map = {str(row.get('it_id', '')): row for row in rows}
     missing_item_ids = [item_id for item_id in normalized_ids if item_id not in row_map]
 
-    # Hard wall-clock budget so the response always returns before a reverse-proxy (e.g. cloudtype) times it out.
-    deadline = time.monotonic() + 15
+    # Hard wall-clock budget per item; the whole batch itself runs in a background thread (see start_11st_job)
+    # so this only guards against a single stuck call eating the rest of the batch's time.
+    deadline = time.monotonic() + (5 * len(normalized_ids) + 10)
     results = []
     succeeded = 0
     for item_id in normalized_ids:
@@ -1248,6 +1250,45 @@ def register_items_to_11st(item_ids, disp_ctgr_no):
         'missingItemIds': missing_item_ids,
         'results': results
     }
+
+
+# In-memory job store: 11st registration runs in the background so the HTTP request that
+# starts it can return immediately, since a cloudtype gateway 502's the connection if the
+# blocked/slow external API call keeps the request open too long.
+_ELEVENST_JOBS = {}
+_ELEVENST_JOBS_LOCK = threading.Lock()
+
+
+def _run_11st_job(job_id, item_ids, disp_ctgr_no):
+    try:
+        result = register_items_to_11st(item_ids, disp_ctgr_no)
+        with _ELEVENST_JOBS_LOCK:
+            _ELEVENST_JOBS[job_id] = {'status': 'done', 'result': result, 'error': None}
+    except RuntimeError as exc:
+        with _ELEVENST_JOBS_LOCK:
+            _ELEVENST_JOBS[job_id] = {'status': 'error', 'result': None, 'error': str(exc)}
+    except Exception as exc:
+        with _ELEVENST_JOBS_LOCK:
+            _ELEVENST_JOBS[job_id] = {'status': 'error', 'result': None, 'error': f'11번가 상품 등록 처리 중 오류: {exc}'}
+
+
+def start_11st_job(item_ids, disp_ctgr_no):
+    if not isinstance(item_ids, list) or not item_ids:
+        raise ValueError('전송할 상품코드 목록 형식이 올바르지 않습니다.')
+
+    job_id = uuid.uuid4().hex
+    with _ELEVENST_JOBS_LOCK:
+        _ELEVENST_JOBS[job_id] = {'status': 'pending', 'result': None, 'error': None}
+
+    thread = threading.Thread(target=_run_11st_job, args=(job_id, item_ids, disp_ctgr_no), daemon=True)
+    thread.start()
+    return job_id
+
+
+def get_11st_job(job_id):
+    with _ELEVENST_JOBS_LOCK:
+        job = _ELEVENST_JOBS.get(job_id)
+        return dict(job) if job else None
 
 
 def register_items_to_target_db(item_ids):
@@ -1558,14 +1599,28 @@ def stats_items_register_11st_selected():
         return jsonify({'success': False, 'message': '전송할 상품코드 목록 형식이 올바르지 않습니다.'}), 400
 
     try:
-        result = register_items_to_11st(item_ids, disp_ctgr_no)
-    except RuntimeError as exc:
+        job_id = start_11st_job(item_ids, disp_ctgr_no)
+    except ValueError as exc:
         return jsonify({'success': False, 'message': str(exc)}), 400
-    except Exception as exc:
-        return jsonify({'success': False, 'message': '11번가 상품 등록에 실패했습니다.', 'error': str(exc)}), 500
 
+    return jsonify({'success': True, 'status': 'pending', 'jobId': job_id})
+
+
+@app.route('/stats-items/register-11st-status/<job_id>', methods=['GET'])
+def stats_items_register_11st_status(job_id):
+    job = get_11st_job(job_id)
+    if not job:
+        return jsonify({'success': False, 'message': '작업을 찾을 수 없습니다.'}), 404
+
+    if job['status'] == 'pending':
+        return jsonify({'success': True, 'status': 'pending'})
+
+    if job['status'] == 'error':
+        return jsonify({'success': False, 'status': 'error', 'message': job['error']}), 500
+
+    result = job['result'] or {}
     if result.get('succeeded', 0) <= 0:
-        return jsonify({'success': False, 'message': '등록에 성공한 상품이 없습니다.', **result}), 502
+        return jsonify({'success': False, 'status': 'done', 'message': '등록에 성공한 상품이 없습니다.', **result}), 502
 
     message = f'11번가 상품등록 {result.get("succeeded", 0)}건 성공'
     if result.get('failed', 0) > 0:
@@ -1573,7 +1628,7 @@ def stats_items_register_11st_selected():
     if result.get('missing', 0) > 0:
         message += f' (원본 미존재 {result.get("missing", 0)}건)'
 
-    return jsonify({'success': True, 'message': message, **result})
+    return jsonify({'success': True, 'status': 'done', 'message': message, **result})
 
 
 @app.route('/channel-configs/init', methods=['POST'])

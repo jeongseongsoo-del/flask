@@ -338,6 +338,22 @@
           }
         };
 
+        const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+        const poll11stJobStatus = async (jobId) => {
+          const maxAttempts = 40;
+          for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+            await wait(1500);
+            const response = await fetch(`${previewBaseUrl}/stats-items/register-11st-status/${encodeURIComponent(jobId)}`);
+            const data = await parseJsonResponse(response);
+            if (data.status === 'pending') {
+              continue;
+            }
+            return data;
+          }
+          throw new Error('11번가 상품 등록 처리 시간이 너무 오래 걸립니다. 잠시 후 다시 확인해주세요.');
+        };
+
         const registerSelectedItemsTo11st = async () => {
           const itemIds = getSelectedItemIds();
           if (itemIds.length === 0) {
@@ -363,13 +379,18 @@
           }
 
           try {
-            const response = await fetch(`${previewBaseUrl}/stats-items/register-11st-selected`, {
+            const startResponse = await fetch(`${previewBaseUrl}/stats-items/register-11st-selected`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ itemIds, dispCtgrNo })
             });
-            const data = await parseJsonResponse(response);
-            if (!response.ok || !data?.success) {
+            const startData = await parseJsonResponse(startResponse);
+            if (!startResponse.ok || !startData?.success || !startData?.jobId) {
+              throw new Error(startData?.message || '11번가 상품 등록 요청을 시작하지 못했습니다.');
+            }
+
+            const data = await poll11stJobStatus(startData.jobId);
+            if (!data?.success) {
               throw new Error(data?.message || '11번가 상품 등록에 실패했습니다.');
             }
 
