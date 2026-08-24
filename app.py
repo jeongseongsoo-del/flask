@@ -2,7 +2,7 @@ from flask import Flask, jsonify, request
 from flask_cors import CORS
 from datetime import datetime
 from decimal import Decimal, ROUND_UP
-from urllib.error import HTTPError
+from urllib.error import HTTPError, URLError
 from urllib.request import Request as UrlRequest, urlopen
 import json
 import os
@@ -1102,10 +1102,13 @@ def send_11st_product_request(api_key, api_base_url, xml_body):
         }
     )
     try:
-        with urlopen(request_obj, timeout=20) as response:
+        with urlopen(request_obj, timeout=10) as response:
             return response.status, response.read().decode('utf-8', 'ignore')
     except HTTPError as exc:
         return exc.code, exc.read().decode('utf-8', 'ignore')
+    except URLError as exc:
+        # DNS/connection failure - the configured endpoint is unreachable from this server.
+        raise RuntimeError(f'11번가 API 서버에 연결할 수 없습니다 ({url}): {exc.reason}') from exc
 
 
 def parse_11st_response(response_text):
