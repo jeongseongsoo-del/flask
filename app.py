@@ -2,6 +2,7 @@ from flask import Flask, jsonify, request
 from flask_cors import CORS
 from datetime import datetime
 from decimal import Decimal, ROUND_UP
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
 from urllib.error import HTTPError, URLError
 from urllib.request import Request as UrlRequest, urlopen
 import json
@@ -1090,6 +1091,14 @@ def build_11st_product_xml(fields):
     return '<?xml version="1.0" encoding="UTF-8"?><Product>' + ''.join(body_parts) + '</Product>'
 
 
+def _do_11st_http_call(request_obj):
+    with urlopen(request_obj, timeout=3) as response:
+        return response.status, response.read().decode('utf-8', 'ignore')
+
+
+_ELEVENST_EXECUTOR = ThreadPoolExecutor(max_workers=4, thread_name_prefix='elevenst-api')
+
+
 def send_11st_product_request(api_key, api_base_url, xml_body):
     url = api_base_url or ELEVENST_DEFAULT_API_URL
     request_obj = UrlRequest(
@@ -1101,9 +1110,14 @@ def send_11st_product_request(api_key, api_base_url, xml_body):
             'openapikey': api_key
         }
     )
+
+    # urlopen's timeout does not cover DNS resolution, so a blocked/stalled egress can hang
+    # indefinitely and cause the platform gateway to 502. Bound the whole call in a worker thread.
+    future = _ELEVENST_EXECUTOR.submit(_do_11st_http_call, request_obj)
     try:
-        with urlopen(request_obj, timeout=3) as response:
-            return response.status, response.read().decode('utf-8', 'ignore')
+        return future.result(timeout=5)
+    except FutureTimeoutError as exc:
+        raise RuntimeError(f'11번가 API 서버 응답이 없습니다 ({url}). 네트워크 접근이 차단되었을 수 있습니다.') from exc
     except HTTPError as exc:
         return exc.code, exc.read().decode('utf-8', 'ignore')
     except URLError as exc:
@@ -1187,7 +1201,7 @@ def register_items_to_11st(item_ids, disp_ctgr_no):
     missing_item_ids = [item_id for item_id in normalized_ids if item_id not in row_map]
 
     # Hard wall-clock budget so the response always returns before a reverse-proxy (e.g. cloudtype) times it out.
-    deadline = time.monotonic() + 10
+    deadline = time.monotonic() + 15
     results = []
     succeeded = 0
     for item_id in normalized_ids:
