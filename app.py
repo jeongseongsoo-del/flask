@@ -1017,7 +1017,9 @@ def delete_items_detail(item_ids):
 
 
 # 11st product registration API spec, see help.txt for field-by-field mapping rules.
-ELEVENST_DEFAULT_API_URL = 'http://api.11st.co.kr/rest/prodservices/dispatchprd'
+# Endpoint confirmed reachable via curl test (returns auth-code -200 "key not found" rather than
+# -997 "service not found"), unlike the old /rest/prodservices/dispatchprd guess.
+ELEVENST_DEFAULT_API_URL = 'http://api.11st.co.kr/rest/prodservices/product'
 ELEVENST_CDATA_FIELDS = {'htmlDetail', 'rtngExchDetail'}
 ELEVENST_AS_DETAIL = '제품에 문제가 발견시 먼저 연락주시기 바랍니다. 063-262-2539'
 ELEVENST_RETURN_EXCHANGE_DETAIL = (
