@@ -1084,19 +1084,287 @@ def build_11st_product_fields(row, disp_ctgr_no):
     }
 
 
+# Official <Product> element skeleton for POST /rest/prodservices/product, per 11st's PHP sample
+# (help.txt). Field order and nesting (e.g. certTypeCd under ProductCertGroup/ProductCert) must
+# match this exactly; unused fields are left as empty self-closing tags.
+ELEVENST_PRODUCT_XML_TEMPLATE = """<?xml version="1.0" encoding="euc-kr" standalone="yes"?>
+<Product>
+  <abrdBuyPlace/>
+  <abrdSizetableDispYn/>
+  <selMnbdNckNm/>
+  <selMthdCd/>
+  <dispCtgrNo/>
+  <PartnerCategory>
+    <leafCategoryYn/>
+    <categoryName1/>
+    <categoryName2/>
+    <categoryName3/>
+    <categoryName4/>
+    <lastCategoryNo/>
+  </PartnerCategory>
+  <prdTypCd/>
+  <hsCode/>
+  <prdNm/>
+  <prdNmEng/>
+  <advrtStmt/>
+  <brand/>
+  <apiPrdAttrBrandCd/>
+  <rmaterialTypCd/>
+  <orgnTypCd/>
+  <orgnDifferentYn/>
+  <orgnTypDtlsCd/>
+  <orgnNmVal/>
+  <ProductRmaterial>
+    <rmaterialNm/>
+    <ingredNm/>
+    <orgnCountry/>
+    <content/>
+  </ProductRmaterial>
+  <beefTraceStat/>
+  <beefTraceNo/>
+  <sellerPrdCd/>
+  <suplDtyfrPrdClfCd/>
+  <yearEndTaxYn/>
+  <forAbrdBuyClf/>
+  <importFeeCd/>
+  <prdStatCd/>
+  <useMon/>
+  <gradeRefur/>
+  <paidSelPrc/>
+  <exteriorSpecialNote/>
+  <minorSelCnYn/>
+  <prdImage01/>
+  <prdImage02/>
+  <prdImage03/>
+  <prdImage04/>
+  <prdImage09/>
+  <htmlDetail/>
+  <ProductCertGroup>
+    <crtfGrpTypCd/>
+    <crtfGrpObjClfCd/>
+    <crtfGrpExptTypCd/>
+    <ProductCert>
+      <certTypeCd/>
+      <certKey/>
+    </ProductCert>
+  </ProductCertGroup>
+  <ProductMedical>
+    <medNum1/>
+    <medNum2/>
+    <medNum3/>
+  </ProductMedical>
+  <reviewDispYn/>
+  <reviewOptDispYn/>
+  <selPrdClfCd/>
+  <aplBgnDy/>
+  <aplEndDy/>
+  <setFpSelTermYn/>
+  <selTermUseYn/>
+  <selPrdClfFpCd/>
+  <wrhsPlnDy/>
+  <contractCd/>
+  <chargeCd/>
+  <periodCd/>
+  <phonePrc/>
+  <maktPrc/>
+  <recommendRetailPrice/>
+  <selPrc/>
+  <cuponcheck/>
+  <dscAmtPercnt/>
+  <cupnDscMthdCd/>
+  <cupnUseLmtDyYn/>
+  <cupnIssEndDy/>
+  <pay11YN/>
+  <pay11Value/>
+  <pay11WyCd/>
+  <intFreeYN/>
+  <intfreeMonClfCd/>
+  <pluYN/>
+  <pluDscCd/>
+  <pluDscBasis/>
+  <pluDscAmtPercnt/>
+  <pluDscMthdCd/>
+  <pluUseLmtDyYn/>
+  <pluIssStartDy/>
+  <pluIssEndDy/>
+  <hopeShpYn/>
+  <hopeShpPnt/>
+  <hopeShpWyCd/>
+  <optSelectYn/>
+  <txtColCnt/>
+  <optionAllQty/>
+  <optionAllAddPrc/>
+  <optionAllAddWght/>
+  <prdExposeClfCd/>
+  <optMixYn/>
+  <ProductOption>
+    <useYn/>
+    <colOptPrice/>
+    <colValue0/>
+    <colCount/>
+    <colSellerStockCd/>
+    <optionImage/>
+  </ProductOption>
+  <ProductRootOption>
+    <colTitle/>
+    <ProductOption>
+      <colOptPrice/>
+      <colValue0/>
+      <optionImage/>
+    </ProductOption>
+  </ProductRootOption>
+  <ProductOptionExt>
+    <ProductOption>
+      <useYn/>
+      <colOptPrice/>
+      <colOptCount/>
+      <colCount/>
+      <optWght/>
+      <colSellerStockCd/>
+      <optionMappingKey/>
+      <optionImage/>
+    </ProductOption>
+  </ProductOptionExt>
+  <ProductCustOption>
+    <colOptName/>
+    <colOptUseYn/>
+  </ProductCustOption>
+  <useOptCalc/>
+  <optCalcTranType/>
+  <optTypCd/>
+  <optItem1Nm/>
+  <optItem1MinValue/>
+  <optItem1MaxValue/>
+  <optItem2Nm/>
+  <optItem2MinValue/>
+  <optItem2MaxValue/>
+  <optUnitPrc/>
+  <optUnitCd/>
+  <optSelUnit/>
+  <ProductComponent>
+    <addPrdGrpNm/>
+    <compPrdNm/>
+    <sellerAddPrdCd/>
+    <addCompPrc/>
+    <compPrdQty/>
+    <compPrdVatCd/>
+    <addUseYn/>
+    <addPrdWght/>
+  </ProductComponent>
+  <prdSelQty/>
+  <selMinLimitTypCd/>
+  <selMinLimitQty/>
+  <selLimitTypCd/>
+  <selLimitQty/>
+  <townSelLmtDy/>
+  <useGiftYn/>
+  <ProductGift>
+    <giftInfo/>
+    <giftNm/>
+    <aplBgnDt/>
+    <aplEndDt/>
+  </ProductGift>
+  <gftPackTypCd/>
+  <dlvCnAreaCd/>
+  <dlvWyCd/>
+  <dlvEtprsCd/>
+  <dlvSendCloseTmpltNo/>
+  <dlvCstInstBasiCd/>
+  <dlvCst1/>
+  <dlvCst3/>
+  <dlvCst4/>
+  <dlvCstInfoCd/>
+  <PrdFrDlvBasiAmt/>
+  <dlvCnt1/>
+  <dlvCnt2/>
+  <bndlDlvCnYn/>
+  <dlvCstPayTypCd/>
+  <jejuDlvCst/>
+  <islandDlvCst/>
+  <addrSeqOut/>
+  <outsideYnOut/>
+  <visitDlvYn/>
+  <visitAddrSeq/>
+  <addrSeqOutMemNo/>
+  <addrSeqIn/>
+  <outsideYnIn/>
+  <addrSeqInMemNo/>
+  <abrdCnDlvCst/>
+  <rtngdDlvCst/>
+  <exchDlvCst/>
+  <rtngdDlvCd/>
+  <asDetail/>
+  <rtngExchDetail/>
+  <dlvClf/>
+  <abrdInCd/>
+  <prdWght/>
+  <ntShortNm/>
+  <globalOutAddrSeq/>
+  <mbAddrLocation05/>
+  <globalInAddrSeq/>
+  <mbAddrLocation06/>
+  <mnfcDy/>
+  <eftvDy/>
+  <ProductNotification>
+    <type/>
+    <item>
+      <code/>
+      <name/>
+    </item>
+  </ProductNotification>
+  <company/>
+  <modelNm/>
+  <modelCd/>
+  <mnfcDy/>
+  <isbn13Cd/>
+  <isbn10Cd/>
+  <authorInfo/>
+  <transInfo/>
+  <picInfo/>
+  <mainTitle/>
+  <artist/>
+  <mudvdLabel/>
+  <maker/>
+  <albumNm/>
+  <dvdTitle/>
+  <bcktExYn/>
+  <prcCmpExpYn/>
+  <prcDscCmpExpYn/>
+  <martCPSAgreeYn/>
+  <stdPrdYn/>
+  <ProductTag>
+    <tagName/>
+  </ProductTag>
+  <ProductLuxury>
+    <grade/>
+    <Item>
+      <code/>
+    </Item>
+  </ProductLuxury>
+</Product>"""
+
+
 def build_11st_product_xml(fields):
-    body_parts = []
+    xml = ELEVENST_PRODUCT_XML_TEMPLATE
     for field_name, value in fields.items():
+        if value in (None, ''):
+            continue
+        placeholder = f'<{field_name}/>'
+        if placeholder not in xml:
+            continue
         if field_name in ELEVENST_CDATA_FIELDS:
-            body_parts.append(f'<{field_name}><![CDATA[{value}]]></{field_name}>')
+            replacement = f'<{field_name}><![CDATA[{value}]]></{field_name}>'
         else:
-            body_parts.append(f'<{field_name}>{_xml_escape(value)}</{field_name}>')
-    return '<?xml version="1.0" encoding="UTF-8"?><Product>' + ''.join(body_parts) + '</Product>'
+            replacement = f'<{field_name}>{_xml_escape(value)}</{field_name}>'
+        # count=1 so the accidental duplicate <mnfcDy/> tag in 11st's own template isn't double-filled.
+        xml = xml.replace(placeholder, replacement, 1)
+    return xml
 
 
 def _do_11st_http_call(request_obj):
     with urlopen(request_obj, timeout=3) as response:
-        return response.status, response.read().decode('utf-8', 'ignore')
+        # 11st's API responds EUC-KR encoded (confirmed via curl), not UTF-8.
+        return response.status, response.read().decode('euc-kr', 'ignore')
 
 
 _ELEVENST_EXECUTOR = ThreadPoolExecutor(max_workers=4, thread_name_prefix='elevenst-api')
@@ -1106,10 +1374,10 @@ def send_11st_product_request(api_key, api_base_url, xml_body):
     url = api_base_url or ELEVENST_DEFAULT_API_URL
     request_obj = UrlRequest(
         url,
-        data=xml_body.encode('utf-8'),
+        data=xml_body.encode('euc-kr', errors='replace'),
         method='POST',
         headers={
-            'Content-Type': 'text/xml; charset=UTF-8',
+            'Content-Type': 'text/xml;charset=EUC-KR',
             'openapikey': api_key
         }
     )
@@ -1122,7 +1390,7 @@ def send_11st_product_request(api_key, api_base_url, xml_body):
     except FutureTimeoutError as exc:
         raise RuntimeError(f'11번가 API 서버 응답이 없습니다 ({url}). 네트워크 접근이 차단되었을 수 있습니다.') from exc
     except HTTPError as exc:
-        return exc.code, exc.read().decode('utf-8', 'ignore')
+        return exc.code, exc.read().decode('euc-kr', 'ignore')
     except URLError as exc:
         # DNS/connection failure - the configured endpoint is unreachable from this server.
         raise RuntimeError(f'11번가 API 서버에 연결할 수 없습니다 ({url}): {exc.reason}') from exc
