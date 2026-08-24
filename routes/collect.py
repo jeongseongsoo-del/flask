@@ -126,3 +126,41 @@ def item_detail():
         html = f'<!doctype html><html><head><base href="https://ctx.cretec.kr/"></head><body>{html}</body></html>'
 
     return Response(html, mimetype='text/html; charset=utf-8')
+
+
+@collect_bp.get('/item-image')
+def item_image():
+    item_cd = request.args.get('itemCd', '').strip()
+    if not item_cd:
+        return jsonify({'success': False, 'message': 'itemCd가 필요합니다.'}), 400
+
+    timestamp = int(time.time() * 1000)
+    url = (
+        'https://ctx.cretec.kr/CtxApp/com/imgView.do'
+        f'?path=/resource&itemCd={quote(item_cd, safe="")}&detailYn=Y&zoomViewYn=&imgHeight=&_={timestamp}'
+    )
+
+    try:
+        html = _request_text(url, timeout=15, accept='text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8')
+    except Exception as exc:
+        return jsonify({'success': False, 'message': '이미지 페이지를 불러오지 못했습니다.', 'error': str(exc)}), 502
+
+    element_id = f'view_img_{item_cd}'
+    tag_match = re.search(
+        r'<img\b[^>]*\bid=["\']' + re.escape(element_id) + r'["\'][^>]*>',
+        html,
+        re.IGNORECASE
+    )
+
+    image_url = ''
+    if tag_match:
+        src_match = re.search(r'\bsrc=["\']([^"\']+)["\']', tag_match.group(0), re.IGNORECASE)
+        if src_match:
+            image_url = src_match.group(1).strip()
+
+    if image_url.startswith('//'):
+        image_url = f'https:{image_url}'
+    elif image_url.startswith('/'):
+        image_url = f'https://ctx.cretec.kr{image_url}'
+
+    return jsonify({'success': True, 'itemCd': item_cd, 'imageUrl': image_url})

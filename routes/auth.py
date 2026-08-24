@@ -20,6 +20,7 @@ def is_api_request():
         request.path.startswith('/collect')
         or request.path.startswith('/lookup-proino')
         or request.path.startswith('/item-detail')
+        or request.path.startswith('/item-image')
         or request.path.startswith('/save-item')
         or request.path.startswith('/stats-items')
         or request.path.startswith('/stats-item')

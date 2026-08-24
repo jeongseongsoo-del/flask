@@ -176,7 +176,6 @@
       const saveDbBtn = document.getElementById('save-db-btn');
       const productImagePreview = document.getElementById('field-product-image-preview');
       const productImageEmpty = document.getElementById('field-product-image-empty');
-      const CTX_RESOURCE_BASE_URL = 'https://ctx.cretec.kr/CtxApp/resource';
       const previewBaseUrl = window.location.hostname && window.location.hostname !== 'file'
         ? `${window.location.protocol}//${window.location.host}`
         : 'http://127.0.0.1:5000';
@@ -196,27 +195,13 @@
         shippingFee: document.getElementById('field-shipping-fee')
       };
 
-      function buildProductImageUrl(imgFile) {
-        const normalized = String(imgFile || '').trim();
-        if (!normalized) {
-          return '';
-        }
+      function setProductImageField(imageUrl) {
+        const normalizedUrl = String(imageUrl || '').trim();
 
-        if (/^https?:\/\//i.test(normalized)) {
-          return normalized;
-        }
+        collectionFields.imgFile.value = '';
+        collectionFields.productImageUrl.value = normalizedUrl;
 
-        return `${CTX_RESOURCE_BASE_URL}/${normalized.replace(/^\/+/, '')}`;
-      }
-
-      function setProductImageField(imgFile) {
-        const normalizedImgFile = String(imgFile || '').trim();
-        const imageUrl = buildProductImageUrl(normalizedImgFile);
-
-        collectionFields.imgFile.value = normalizedImgFile;
-        collectionFields.productImageUrl.value = imageUrl;
-
-        if (!imageUrl) {
+        if (!normalizedUrl) {
           productImagePreview.removeAttribute('src');
           productImagePreview.classList.add('hidden');
           productImageEmpty.textContent = '이미지 없음';
@@ -224,9 +209,29 @@
           return;
         }
 
-        productImagePreview.src = imageUrl;
+        productImagePreview.src = normalizedUrl;
         productImagePreview.classList.remove('hidden');
         productImageEmpty.classList.add('hidden');
+      }
+
+      async function fetchAndSetProductImage(itemCd) {
+        const normalizedItemCd = sanitizeProductCode(itemCd);
+        if (!normalizedItemCd) {
+          setProductImageField('');
+          renderSqlPreview();
+          return;
+        }
+
+        try {
+          const response = await fetch(`${previewBaseUrl}/item-image?itemCd=${encodeURIComponent(normalizedItemCd)}`);
+          const data = await response.json();
+          setProductImageField(data?.success ? data.imageUrl : '');
+        } catch (error) {
+          console.error(error);
+          setProductImageField('');
+        }
+
+        renderSqlPreview();
       }
 
       productImagePreview?.addEventListener('error', () => {
@@ -628,7 +633,7 @@
         const shipUnit = sanitizeMarketplaceText((qties[3] || '').trim());
         const stockTotal = toIntegerValue(item?.d1sum) + toIntegerValue(item?.s1sum);
         const supplyPrice = toIntegerValue(item?.std_unit_pric);
-        const imageFile = item?.img_file || '';
+        const itemCd = sanitizeProductCode(collectionFields.managementNo.value || latestLookupData?.proino || '');
         const productNameWithBaseShipInfo = buildProductNameWithBaseShipInfo(productName, baseShipQty, shipUnit);
 
         collectionFields.productName.value = productNameWithBaseShipInfo;
@@ -639,7 +644,7 @@
         collectionFields.baseShipQty.value = baseShipQty;
         collectionFields.shipUnit.value = shipUnit;
         collectionFields.supplyPrice.value = String(supplyPrice);
-        setProductImageField(imageFile);
+        fetchAndSetProductImage(itemCd);
         renderSummaryInfo(item);
 
         Object.values(collectionFields).forEach((input) => {
