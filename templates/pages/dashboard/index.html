@@ -119,6 +119,16 @@
         return text ? escapeHtml(text) : '-';
       }
 
+      async function parseJsonResponse(response) {
+        const rawText = await response.text();
+        try {
+          return rawText ? JSON.parse(rawText) : {};
+        } catch (error) {
+          const snippet = rawText.replace(/\s+/g, ' ').trim().slice(0, 200);
+          throw new Error(`서버가 JSON이 아닌 응답을 반환했습니다 (상태 ${response.status}). 서버가 재시작되지 않았거나 오류 페이지일 수 있습니다. 응답: ${snippet || '(empty)'}`);
+        }
+      }
+
       function sanitizeExplainHtml(rawHtml) {
         const parser = new DOMParser();
         const doc = parser.parseFromString(String(rawHtml || ''), 'text/html');
@@ -315,7 +325,7 @@
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ itemIds })
             });
-            const data = await response.json();
+            const data = await parseJsonResponse(response);
             if (!response.ok || !data?.success) {
               throw new Error(data?.message || '선택 상품 전송에 실패했습니다.');
             }
@@ -358,7 +368,7 @@
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ itemIds, dispCtgrNo })
             });
-            const data = await response.json();
+            const data = await parseJsonResponse(response);
             if (!response.ok || !data?.success) {
               throw new Error(data?.message || '11번가 상품 등록에 실패했습니다.');
             }
@@ -401,7 +411,7 @@
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ itemIds })
             });
-            const data = await response.json();
+            const data = await parseJsonResponse(response);
             if (!response.ok || !data?.success) {
               throw new Error(data?.message || '선택 삭제에 실패했습니다.');
             }
@@ -546,7 +556,7 @@
 
           try {
             const response = await fetch(`${previewBaseUrl}/stats-item/${encodeURIComponent(activeDetailItemId)}`);
-            const data = await response.json();
+            const data = await parseJsonResponse(response);
             if (!response.ok || !data?.success) {
               throw new Error(data?.message || '상세 조회에 실패했습니다.');
             }
@@ -591,7 +601,7 @@
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ item: payload })
             });
-            const data = await response.json();
+            const data = await parseJsonResponse(response);
             if (!response.ok || !data?.success) {
               throw new Error(data?.message || '수정에 실패했습니다.');
             }
@@ -621,7 +631,7 @@
             const response = await fetch(`${previewBaseUrl}/stats-item/${encodeURIComponent(activeDetailItemId)}`, {
               method: 'DELETE'
             });
-            const data = await response.json();
+            const data = await parseJsonResponse(response);
             if (!response.ok || !data?.success) {
               throw new Error(data?.message || '삭제에 실패했습니다.');
             }
@@ -640,7 +650,7 @@
           statsContent.textContent = '목록을 불러오는 중...';
           try {
             const response = await fetch(`${previewBaseUrl}/stats-items?${buildStatsQueryString()}`);
-            const data = await response.json();
+            const data = await parseJsonResponse(response);
             if (!response.ok || !data?.success) {
               throw new Error(data?.message || '통계 목록 조회에 실패했습니다.');
             }
