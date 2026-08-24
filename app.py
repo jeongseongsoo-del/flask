@@ -1102,7 +1102,7 @@ def send_11st_product_request(api_key, api_base_url, xml_body):
         }
     )
     try:
-        with urlopen(request_obj, timeout=10) as response:
+        with urlopen(request_obj, timeout=8) as response:
             return response.status, response.read().decode('utf-8', 'ignore')
     except HTTPError as exc:
         return exc.code, exc.read().decode('utf-8', 'ignore')
@@ -1133,6 +1133,11 @@ def register_items_to_11st(item_ids, disp_ctgr_no):
     normalized_ids = normalize_selected_item_ids(item_ids)
     if not normalized_ids:
         raise RuntimeError('전송할 상품코드가 없습니다.')
+
+    # Cap per-request batch size so worst-case (all timeouts) stays under the gunicorn worker timeout.
+    max_batch_size = 10
+    if len(normalized_ids) > max_batch_size:
+        raise RuntimeError(f'한 번에 최대 {max_batch_size}건까지만 전송할 수 있습니다. 선택 항목을 나눠서 다시 시도하세요.')
 
     normalized_ctgr_no = str(disp_ctgr_no or '').strip()
     if not normalized_ctgr_no:
