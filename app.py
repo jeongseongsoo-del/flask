@@ -2,6 +2,8 @@ from flask import Flask, jsonify, request
 from flask_cors import CORS
 from datetime import datetime
 from decimal import Decimal, ROUND_UP
+from urllib.error import HTTPError
+from urllib.request import Request as UrlRequest, urlopen
 import json
 import os
 import re
@@ -1012,6 +1014,214 @@ def delete_items_detail(item_ids):
         conn.close()
 
 
+# 11st product registration API spec, see help.txt for field-by-field mapping rules.
+ELEVENST_DEFAULT_API_URL = 'http://api.11st.co.kr/rest/prodservices/dispatchprd'
+ELEVENST_CDATA_FIELDS = {'htmlDetail', 'rtngExchDetail'}
+ELEVENST_AS_DETAIL = '제품에 문제가 발견시 먼저 연락주시기 바랍니다. 063-262-2539'
+ELEVENST_RETURN_EXCHANGE_DETAIL = (
+    '-반품/교환 사유에 따른 요청 가능 기간\n'
+    ' 구매자 단순 변심은 상품 수령 후 7일 이내 (구매자 반품배송비 부담)\n'
+    ' 표시/광고와 상이, 계약 내용과 다르게 이행된 경우 상품 수령 후 1개월 이내 혹은 '
+    '표시/광고와 다른 사실을 안 날로부터 30일 이내 (판매자 반품 배송비 부담) 둘 중 하나 경과 시 반품/교환 불가\n\n'
+    '-반품/교환 불가능 사유\n'
+    '1.반품요청기간이 지난 경우\n'
+    '2.구매자의 책임 있는 사유로 상품 등이 멸실 또는 훼손된 경우 (단, 상품의 내용을 확인하기 위하여 포장 등을 훼손한 경우는 제외)\n'
+    '3.구매자의 책임있는 사유로 포장이 훼손되어 상품 가치가 현저히 상실된 경우 (예: 식품, 화장품, 향수류, 음반 등)\n'
+    '4.구매자의 사용 또는 일부 소비에 의하여 상품의 가치가 현저히 감소한 경우 (라벨이 떨어진 의류 또는 태그가 떨어진 명품관 상품인 경우)\n'
+    '5.시간의 경과에 의하여 재판매가 곤란할 정도로 상품 등의 가치가 현저히 감소한 경우\n'
+    '6.고객의 요청사항에 맞춰 제작에 들어가는 맞춤제작상품의 경우 (판매자에게 회복불가능한 손해가 예상되고, 그러한 예정으로 청약철회권 행사가 불가하다는 사실을 서면 동의 받은 경우)\n'
+    '7.복제가 가능한 상품 등의 포장을 훼손한 경우'
+)
+
+
+def _xml_escape(value):
+    text = '' if value is None else str(value)
+    return text.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+
+
+def build_11st_product_fields(row, disp_ctgr_no):
+    # dlvEtprsCd 00034(대신택배/유료) vs 00021(CJ택배/무료) branches per help.txt.
+    is_paid_delivery = _to_int_or_zero(row.get('it_sc_price')) > 0
+
+    return {
+        'selMthdCd': '01',
+        'dispCtgrNo': disp_ctgr_no,
+        'prdTypCd': '01',
+        'prdNm': row.get('it_name') or '',
+        'brand': '알수없음',
+        'rmaterialTypCd': '04',
+        'orgnTypCd': '03',
+        'orgnNmVal': '상세설명 참조',
+        'beefTraceStat': '01',
+        'sellerPrdCd': row.get('it_shop_memo') or '',
+        'suplDtyfrPrdClfCd': '01',
+        'forAbrdBuyClf': '01',
+        'prdStatCd': '01',
+        'minorSelCnYn': 'Y',
+        'prdImage01': row.get('it_1') or '',
+        'htmlDetail': row.get('it_explan') or '',
+        'certTypeCd': '131',
+        'selPrc': _to_int_or_zero(row.get('it_price')),
+        'cuponcheck': 'N',
+        'dlvCnAreaCd': '02',
+        'dlvWyCd': '01',
+        'dlvEtprsCd': '00034' if is_paid_delivery else '00021',
+        'dlvSendCloseTmpltNo': '4226542' if is_paid_delivery else '1467199',
+        'dlvCstInstBasiCd': '02' if is_paid_delivery else '01',
+        'bndlDlvCnYn': 'Y' if is_paid_delivery else 'N',
+        'dlvCstPayTypCd': '03',
+        'jejuDlvCst': 3000 if is_paid_delivery else 6000,
+        'islandDlvCst': 3000 if is_paid_delivery else 6000,
+        'rtngdDlvCst': 3500 if is_paid_delivery else 6500,
+        'exchDlvCst': 7000 if is_paid_delivery else 13000,
+        'asDetail': ELEVENST_AS_DETAIL,
+        'rtngExchDetail': ELEVENST_RETURN_EXCHANGE_DETAIL,
+        'dlvClf': '02'
+    }
+
+
+def build_11st_product_xml(fields):
+    body_parts = []
+    for field_name, value in fields.items():
+        if field_name in ELEVENST_CDATA_FIELDS:
+            body_parts.append(f'<{field_name}><![CDATA[{value}]]></{field_name}>')
+        else:
+            body_parts.append(f'<{field_name}>{_xml_escape(value)}</{field_name}>')
+    return '<?xml version="1.0" encoding="UTF-8"?><Product>' + ''.join(body_parts) + '</Product>'
+
+
+def send_11st_product_request(api_key, api_base_url, xml_body):
+    url = api_base_url or ELEVENST_DEFAULT_API_URL
+    request_obj = UrlRequest(
+        url,
+        data=xml_body.encode('utf-8'),
+        method='POST',
+        headers={
+            'Content-Type': 'text/xml; charset=UTF-8',
+            'openapikey': api_key
+        }
+    )
+    try:
+        with urlopen(request_obj, timeout=20) as response:
+            return response.status, response.read().decode('utf-8', 'ignore')
+    except HTTPError as exc:
+        return exc.code, exc.read().decode('utf-8', 'ignore')
+
+
+def parse_11st_response(response_text):
+    result_code_match = re.search(r'<resultCode>([^<]*)</resultCode>', response_text, re.IGNORECASE)
+    result_msg_match = re.search(r'<resultMsg>([^<]*)</resultMsg>', response_text, re.IGNORECASE)
+    prd_no_match = re.search(r'<prdNo>([^<]*)</prdNo>', response_text, re.IGNORECASE)
+    result_code = result_code_match.group(1).strip() if result_code_match else ''
+    result_msg = result_msg_match.group(1).strip() if result_msg_match else ''
+    prd_no = prd_no_match.group(1).strip() if prd_no_match else ''
+    return {
+        'success': result_code in ('00', '0', '200'),
+        'resultCode': result_code,
+        'resultMsg': result_msg,
+        'prdNo': prd_no
+    }
+
+
+def register_items_to_11st(item_ids, disp_ctgr_no):
+    if pymysql is None:
+        raise RuntimeError('pymysql 패키지가 설치되지 않았습니다. requirements 설치 후 다시 시도하세요.')
+
+    normalized_ids = normalize_selected_item_ids(item_ids)
+    if not normalized_ids:
+        raise RuntimeError('전송할 상품코드가 없습니다.')
+
+    normalized_ctgr_no = str(disp_ctgr_no or '').strip()
+    if not normalized_ctgr_no:
+        raise RuntimeError('카테고리 번호(dispCtgrNo)를 입력하세요.')
+
+    channel_config = fetch_channel_config('11st', include_secrets=True)
+    if not channel_config:
+        raise RuntimeError('11번가 채널 설정이 없습니다. 채널설정 페이지에서 API 키를 등록하세요.')
+    if not bool(channel_config.get('is_enabled')):
+        raise RuntimeError('11번가 채널이 비활성화 상태입니다. 채널설정에서 사용 체크 후 저장하세요.')
+
+    api_key = str(channel_config.get('api_key') or '').strip()
+    if not api_key:
+        raise RuntimeError('11번가 API 키가 설정되지 않았습니다. 채널설정에서 api_key를 입력하세요.')
+
+    api_base_url = str(channel_config.get('base_url') or '').strip()
+
+    source_config = get_db_config()
+    source_missing = validate_db_config(source_config)
+    if source_missing:
+        missing_names = ', '.join(source_missing)
+        raise RuntimeError(f'원본 DB 접속 환경변수가 누락되었습니다: {missing_names}')
+
+    conn = pymysql.connect(
+        host=source_config['host'],
+        port=source_config['port'],
+        user=source_config['user'],
+        password=source_config['password'],
+        database=source_config['database'],
+        charset='utf8mb4',
+        autocommit=True,
+        cursorclass=pymysql.cursors.DictCursor
+    )
+    try:
+        placeholders = ', '.join(['%s'] * len(normalized_ids))
+        with conn.cursor() as cursor:
+            cursor.execute(
+                f'SELECT it_id, it_name, it_shop_memo, it_1, it_explan, it_price, it_sc_price '
+                f'FROM g5_shop_item WHERE it_id IN ({placeholders})',
+                tuple(normalized_ids)
+            )
+            rows = cursor.fetchall() or []
+    finally:
+        conn.close()
+
+    row_map = {str(row.get('it_id', '')): row for row in rows}
+    missing_item_ids = [item_id for item_id in normalized_ids if item_id not in row_map]
+
+    results = []
+    succeeded = 0
+    for item_id in normalized_ids:
+        row = row_map.get(item_id)
+        if not row:
+            results.append({'itemId': item_id, 'success': False, 'message': '원본 데이터가 없습니다.'})
+            continue
+
+        xml_body = build_11st_product_xml(build_11st_product_fields(row, normalized_ctgr_no))
+
+        try:
+            status_code, response_text = send_11st_product_request(api_key, api_base_url, xml_body)
+        except Exception as exc:
+            results.append({'itemId': item_id, 'success': False, 'message': f'API 요청 실패: {exc}'})
+            continue
+
+        parsed = parse_11st_response(response_text)
+        if status_code != 200 or not parsed['success']:
+            results.append({
+                'itemId': item_id,
+                'success': False,
+                'message': parsed.get('resultMsg') or f'HTTP {status_code}',
+                'raw': response_text[:500]
+            })
+            continue
+
+        succeeded += 1
+        results.append({
+            'itemId': item_id,
+            'success': True,
+            'message': parsed.get('resultMsg') or '등록 완료',
+            'prdNo': parsed.get('prdNo')
+        })
+
+    return {
+        'requested': len(normalized_ids),
+        'succeeded': succeeded,
+        'failed': len(normalized_ids) - succeeded,
+        'missing': len(missing_item_ids),
+        'missingItemIds': missing_item_ids,
+        'results': results
+    }
+
+
 def register_items_to_target_db(item_ids):
     if pymysql is None:
         raise RuntimeError('pymysql 패키지가 설치되지 않았습니다. requirements 설치 후 다시 시도하세요.')
@@ -1307,6 +1517,33 @@ def stats_items_register_selected():
         message += ' (관리 상태 업데이트 실패)'
     elif result.get('tracked', 0) > 0:
         message += f' (관리 상태 {result.get("tracked", 0)}건 업데이트)'
+
+    return jsonify({'success': True, 'message': message, **result})
+
+
+@app.route('/stats-items/register-11st-selected', methods=['POST'])
+def stats_items_register_11st_selected():
+    payload = request.get_json(silent=True) or {}
+    item_ids = payload.get('itemIds')
+    disp_ctgr_no = payload.get('dispCtgrNo')
+    if not isinstance(item_ids, list):
+        return jsonify({'success': False, 'message': '전송할 상품코드 목록 형식이 올바르지 않습니다.'}), 400
+
+    try:
+        result = register_items_to_11st(item_ids, disp_ctgr_no)
+    except RuntimeError as exc:
+        return jsonify({'success': False, 'message': str(exc)}), 400
+    except Exception as exc:
+        return jsonify({'success': False, 'message': '11번가 상품 등록에 실패했습니다.', 'error': str(exc)}), 500
+
+    if result.get('succeeded', 0) <= 0:
+        return jsonify({'success': False, 'message': '등록에 성공한 상품이 없습니다.', **result}), 502
+
+    message = f'11번가 상품등록 {result.get("succeeded", 0)}건 성공'
+    if result.get('failed', 0) > 0:
+        message += f', {result.get("failed", 0)}건 실패'
+    if result.get('missing', 0) > 0:
+        message += f' (원본 미존재 {result.get("missing", 0)}건)'
 
     return jsonify({'success': True, 'message': message, **result})
 
