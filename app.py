@@ -1102,7 +1102,7 @@ def send_11st_product_request(api_key, api_base_url, xml_body):
         }
     )
     try:
-        with urlopen(request_obj, timeout=8) as response:
+        with urlopen(request_obj, timeout=3) as response:
             return response.status, response.read().decode('utf-8', 'ignore')
     except HTTPError as exc:
         return exc.code, exc.read().decode('utf-8', 'ignore')
@@ -1134,8 +1134,8 @@ def register_items_to_11st(item_ids, disp_ctgr_no):
     if not normalized_ids:
         raise RuntimeError('전송할 상품코드가 없습니다.')
 
-    # Cap per-request batch size so worst-case (all timeouts) stays under the gunicorn worker timeout.
-    max_batch_size = 10
+    # Cap per-request batch size so worst-case (all timeouts) stays well under any reverse-proxy gateway timeout.
+    max_batch_size = 3
     if len(normalized_ids) > max_batch_size:
         raise RuntimeError(f'한 번에 최대 {max_batch_size}건까지만 전송할 수 있습니다. 선택 항목을 나눠서 다시 시도하세요.')
 
@@ -1186,12 +1186,18 @@ def register_items_to_11st(item_ids, disp_ctgr_no):
     row_map = {str(row.get('it_id', '')): row for row in rows}
     missing_item_ids = [item_id for item_id in normalized_ids if item_id not in row_map]
 
+    # Hard wall-clock budget so the response always returns before a reverse-proxy (e.g. cloudtype) times it out.
+    deadline = time.monotonic() + 10
     results = []
     succeeded = 0
     for item_id in normalized_ids:
         row = row_map.get(item_id)
         if not row:
             results.append({'itemId': item_id, 'success': False, 'message': '원본 데이터가 없습니다.'})
+            continue
+
+        if time.monotonic() >= deadline:
+            results.append({'itemId': item_id, 'success': False, 'message': '처리 시간 초과로 전송하지 못했습니다. 다시 시도하세요.'})
             continue
 
         xml_body = build_11st_product_xml(build_11st_product_fields(row, normalized_ctgr_no))
