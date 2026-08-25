@@ -23,5 +23,11 @@ admin_menu = {
             "url": f"/admin{admin_router_prefix}/",
             "tag": module_name + "_dashboard",
         },
+        {
+            "id": module_name + "_collect",
+            "name": "수집",
+            "url": f"/admin{admin_router_prefix}/collect",
+            "tag": module_name + "_collect",
+        },
     ]
 }

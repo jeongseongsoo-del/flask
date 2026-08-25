@@ -40,3 +40,19 @@ async def index(request: Request):
     return templates.TemplateResponse(
         f"{TEMPLATE_PATH}/admin/index.html", context
     )
+
+
+@admin_router.get("/collect")
+async def collect(request: Request):
+    """CTX 상품수집 - 수집 페이지"""
+    request.session["menu_key"] = module_name
+    request.session["plugin_submenu_key"] = module_name + "_collect"
+
+    context = {
+        "request": request,
+        "title": "수집",
+        "module_name": module_name,
+    }
+    return templates.TemplateResponse(
+        f"{TEMPLATE_PATH}/admin/collect.html", context
+    )
