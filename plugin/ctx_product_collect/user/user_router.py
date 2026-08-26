@@ -13,7 +13,8 @@ api_router = APIRouter()  # 의존성 없는 순수 API 라우터
 
 templates = UserTemplates()
 
-CTX_API_URL = "https://ctx.cretec.kr/CtxApp/ctx/selectPowerSearchJson.do"
+CTX_PROD_SEARCH_URL = "https://ctx.cretec.kr/CtxApp/ctx/selectPowerSearchJson.do"
+CTX_EBOOK_SEARCH_URL = "https://ctx.cretec.kr/CtxApp/ebook/selectEbookUninumSearch.do"
 
 
 @router.get("/")
@@ -31,10 +32,10 @@ async def index(request: Request):
 
 @api_router.get("/api/prod-search")
 async def prod_search(
-    prod_cd: str = Query(..., description="상품코드"),
+    prod_cd: str = Query(..., description="상품코드 (7자리 숫자)"),
     keyword: str = Query("", description="키워드"),
 ):
-    """CTX API 프록시 — 브라우저 CORS 우회용 서버사이드 호출"""
+    """CTX 상품 정보 프록시 — selectPowerSearchJson"""
     params = {
         "prod_cd": prod_cd,
         "keyword": keyword,
@@ -42,7 +43,7 @@ async def prod_search(
     }
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
-            resp = await client.get(CTX_API_URL, params=params)
+            resp = await client.get(CTX_PROD_SEARCH_URL, params=params)
             resp.raise_for_status()
             return JSONResponse(content=resp.json())
     except httpx.TimeoutException:
@@ -51,3 +52,27 @@ async def prod_search(
         raise HTTPException(status_code=e.response.status_code, detail=f"CTX API 오류: {e.response.text}")
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"CTX API 호출 실패: {str(e)}")
+
+
+@api_router.get("/api/ebook-search")
+async def ebook_search(
+    prod_cd: str = Query(..., description="상품코드 (7자리 숫자)"),
+    item_cd: str = Query("", description="아이템 코드"),
+):
+    """CTX eBook 정보 프록시 — selectEbookUninumSearch"""
+    params = {
+        "prodCd": prod_cd,
+        "itemCd": item_cd,
+        "_": int(time.time() * 1000),
+    }
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.get(CTX_EBOOK_SEARCH_URL, params=params)
+            resp.raise_for_status()
+            return JSONResponse(content=resp.json())
+    except httpx.TimeoutException:
+        raise HTTPException(status_code=504, detail="CTX eBook API 응답 시간 초과")
+    except httpx.HTTPStatusError as e:
+        raise HTTPException(status_code=e.response.status_code, detail=f"CTX eBook API 오류: {e.response.text}")
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"CTX eBook API 호출 실패: {str(e)}")
