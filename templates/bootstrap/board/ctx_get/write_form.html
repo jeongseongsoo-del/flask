@@ -202,8 +202,8 @@
     </form>
 
     <script>
-        // ── 상품코드 CTX API 조회 ──────────────────────────────────────────
-        const CTX_API_BASE = "https://ctx.cretec.kr/CtxApp/ctx/selectPowerSearchJson.do";
+        // ── 상품코드 CTX API 조회 (서버 프록시 경유) ─────────────────────────
+        const CTX_API_BASE = "/ctx_product_collect/api/prod-search";
 
         document.getElementById("btn_prod_search").addEventListener("click", function () {
             const prodCd = document.getElementById("prod_cd").value.trim();
@@ -229,7 +229,7 @@
             const status = document.getElementById("prod_result_status");
             const pre    = document.getElementById("prod_result_json");
             const ts     = Date.now();
-            const url    = `${CTX_API_BASE}?prod_cd=${encodeURIComponent(prodCd)}&keyword=&_=${ts}`;
+            const url    = `${CTX_API_BASE}?prod_cd=${encodeURIComponent(prodCd)}&keyword=`;
 
             btn.disabled    = true;
             btn.textContent = "조회 중...";
