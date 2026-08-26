@@ -9,6 +9,8 @@ from core.template import UserTemplates
 from ..plugin_config import module_name, TEMPLATE_PATH
 
 router = APIRouter()
+api_router = APIRouter()  # 의존성 없는 순수 API 라우터
+
 templates = UserTemplates()
 
 CTX_API_URL = "https://ctx.cretec.kr/CtxApp/ctx/selectPowerSearchJson.do"
@@ -27,7 +29,7 @@ async def index(request: Request):
     )
 
 
-@router.get("/api/prod-search")
+@api_router.get("/api/prod-search")
 async def prod_search(
     prod_cd: str = Query(..., description="상품코드"),
     keyword: str = Query("", description="키워드"),
